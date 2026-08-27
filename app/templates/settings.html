@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div>
+    <h1>Settings</h1>
+    <p>All application, integration, security, system and About controls will live here in v2.</p>
+  </div>
+</section>
+
+<div class="settings-layout">
+  <aside class="settings-nav card">
+    <button class="settings-tab active">General</button>
+    <button class="settings-tab">ISP & Monitoring</button>
+    <button class="settings-tab">Integrations</button>
+    <button class="settings-tab">Wi-Fi Alerts</button>
+    <button class="settings-tab">Notifications</button>
+    <button class="settings-tab">Network Changes</button>
+    <button class="settings-tab">Security</button>
+    <button class="settings-tab">System</button>
+    <button class="settings-tab">About</button>
+  </aside>
+
+  <section class="card settings-content">
+    <h2>General</h2>
+    <p class="muted">v2 uses one shared theme engine. The full editable settings model will be connected in the next development step.</p>
+    <div class="field-grid">
+      <label>Application name<input value="AT Network Dashboard" disabled></label>
+      <label>Timezone<input value="Europe/London" disabled></label>
+      <label>Theme<select disabled><option>Dark</option></select></label>
+      <label>Accent<select disabled><option>Green</option><option>Blue</option><option>Purple</option><option>Amber</option></select></label>
+    </div>
+  </section>
+</div>
+{% endblock %}
