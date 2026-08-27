@@ -3,32 +3,149 @@
 <section class="hero">
   <div>
     <h1>Settings</h1>
-    <p>All application, integration, security, system and About controls will live here in v2.</p>
+    <p>Configure the application, ISP monitoring, integrations, Wi-Fi alerts, security and system options.</p>
   </div>
 </section>
 
 <div class="settings-layout">
   <aside class="settings-nav card">
-    <button class="settings-tab active">General</button>
-    <button class="settings-tab">ISP & Monitoring</button>
-    <button class="settings-tab">Integrations</button>
-    <button class="settings-tab">Wi-Fi Alerts</button>
-    <button class="settings-tab">Notifications</button>
-    <button class="settings-tab">Network Changes</button>
-    <button class="settings-tab">Security</button>
-    <button class="settings-tab">System</button>
-    <button class="settings-tab">About</button>
+    <button class="settings-tab active" data-panel="general">General</button>
+    <button class="settings-tab" data-panel="isp">ISP & Monitoring</button>
+    <button class="settings-tab" data-panel="integrations">Integrations</button>
+    <button class="settings-tab" data-panel="wifi">Wi-Fi Alerts</button>
+    <button class="settings-tab" data-panel="notifications">Notifications</button>
+    <button class="settings-tab" data-panel="changes">Network Changes</button>
+    <button class="settings-tab" data-panel="security">Security</button>
+    <button class="settings-tab" data-panel="system">System</button>
+    <button class="settings-tab" data-panel="about">About</button>
   </aside>
 
-  <section class="card settings-content">
-    <h2>General</h2>
-    <p class="muted">v2 uses one shared theme engine. The full editable settings model will be connected in the next development step.</p>
-    <div class="field-grid">
-      <label>Application name<input value="AT Network Dashboard" disabled></label>
-      <label>Timezone<input value="Europe/London" disabled></label>
-      <label>Theme<select disabled><option>Dark</option></select></label>
-      <label>Accent<select disabled><option>Green</option><option>Blue</option><option>Purple</option><option>Amber</option></select></label>
+  <div class="settings-panels">
+    <section class="card settings-content settings-panel active" id="general">
+      <h2>General</h2>
+      <div class="field-grid">
+        <label>Application name<input id="application_name"></label>
+        <label>Subtitle<input id="application_subtitle"></label>
+        <label>Timezone<input id="timezone"></label>
+        <label>Theme
+          <select id="theme">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </label>
+        <label>Accent
+          <select id="accent">
+            <option value="green">Green</option>
+            <option value="blue">Blue</option>
+            <option value="purple">Purple</option>
+            <option value="amber">Amber</option>
+          </select>
+        </label>
+        <label>Default graph range
+          <select id="default_range_hours">
+            <option value="24">24 Hours</option>
+            <option value="168">7 Days</option>
+            <option value="720">30 Days</option>
+            <option value="2160">90 Days</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="card settings-content settings-panel" id="isp">
+      <h2>ISP & Monitoring</h2>
+      <div class="toggle-row"><span>Enable ISP monitoring</span><input id="isp_enabled" type="checkbox"></div>
+      <div class="field-grid">
+        <label>Provider<input id="isp_provider"></label>
+        <label>Expected download Mbps<input id="expected_download" type="number"></label>
+        <label>Expected upload Mbps<input id="expected_upload" type="number"></label>
+        <label>Warning threshold Mbps<input id="warning_threshold" type="number"></label>
+        <label>Major threshold Mbps<input id="major_threshold" type="number"></label>
+        <label>Critical threshold Mbps<input id="critical_threshold" type="number"></label>
+        <label>Ping target<input id="ping_target"></label>
+        <label>Speed-test interval minutes<input id="speedtest_minutes" type="number"></label>
+      </div>
+    </section>
+
+    <section class="card settings-content settings-panel" id="integrations">
+      <h2>Integrations</h2>
+
+      <div class="integration-block">
+        <div class="toggle-row"><strong>UniFi Network</strong><input id="unifi_enabled" type="checkbox"></div>
+        <div class="field-grid">
+          <label>Gateway / Controller URL<input id="unifi_url" placeholder="https://192.168.1.1"></label>
+          <label>Verify SSL
+            <select id="unifi_verify_ssl"><option value="false">Disabled</option><option value="true">Enabled</option></select>
+          </label>
+          <label>API key<input id="unifi_api_key" type="password" placeholder="Leave blank to keep current key"><span class="secret-status" id="unifi_key_status"></span></label>
+        </div>
+      </div>
+
+      <div class="integration-block">
+        <div class="toggle-row"><strong>UPS / NUT</strong><input id="ups_enabled" type="checkbox"></div>
+        <div class="field-grid">
+          <label>Connection type
+            <select id="ups_type"><option value="nutpi_http">NUTPI HTTP API</option><option value="nut">Direct NUT</option></select>
+          </label>
+          <label>Host / IP<input id="ups_host" placeholder="192.168.1.10"></label>
+          <label>NUT port<input id="ups_port" type="number"></label>
+          <label>UPS name<input id="ups_name"></label>
+          <label>NUTPI status path<input id="nutpi_status_path"></label>
+        </div>
+      </div>
+
+      <div class="integration-block">
+        <div class="toggle-row"><strong>Discord</strong><input id="discord_enabled" type="checkbox"></div>
+        <label>Webhook<input id="discord_webhook" type="password" placeholder="Leave blank to keep current webhook"><span class="secret-status" id="discord_status"></span></label>
+      </div>
+    </section>
+
+    <section class="card settings-content settings-panel" id="wifi">
+      <h2>Wi-Fi Alerts</h2>
+      <p class="muted">Wi-Fi thresholds will be connected when the Wi-Fi collector is ported into v2.</p>
+    </section>
+
+    <section class="card settings-content settings-panel" id="notifications">
+      <h2>Notifications</h2>
+      <p class="muted">Notification-category controls will be added with the alert engine.</p>
+    </section>
+
+    <section class="card settings-content settings-panel" id="changes">
+      <h2>Network Changes</h2>
+      <p class="muted">The configuration-change recorder will be ported with the reporting engine.</p>
+    </section>
+
+    <section class="card settings-content settings-panel" id="security">
+      <h2>Security</h2>
+      <p class="muted">Administrator authentication and password management are the next security milestone for v2.</p>
+    </section>
+
+    <section class="card settings-content settings-panel" id="system">
+      <h2>System</h2>
+      <div class="field-grid info-grid">
+        <div><span class="muted">Version</span><strong>{{ version }}</strong></div>
+        <div><span class="muted">Database</span><strong>SQLite</strong></div>
+        <div><span class="muted">Configuration</span><strong id="setup_state">Loading…</strong></div>
+      </div>
+    </section>
+
+    <section class="card settings-content settings-panel" id="about">
+      <h2>About</h2>
+      <p>AT Network Dashboard is a self-hosted network, ISP, Wi-Fi and power monitoring platform.</p>
+      <div class="field-grid info-grid">
+        <div><span class="muted">Release</span><strong>{{ version }}</strong></div>
+        <div><span class="muted">Architecture</span><strong>Modular v2</strong></div>
+        <div><span class="muted">Configuration</span><strong>Web-first</strong></div>
+        <div><span class="muted">Secrets</span><strong>Encrypted server-side</strong></div>
+      </div>
+    </section>
+
+    <div class="settings-savebar card">
+      <span id="save_status" class="muted">Loading settings…</span>
+      <button id="save_settings" class="primary-button">Save Settings</button>
     </div>
-  </section>
+  </div>
 </div>
+
+<script src="/static/settings.js"></script>
 {% endblock %}
