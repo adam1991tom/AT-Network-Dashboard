@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div>
+    <h1>Dashboard</h1>
+    <p>Clean v2 foundation. Monitoring modules from v1 will be ported here one at a time.</p>
+  </div>
+  <span class="status-pill good">FOUNDATION HEALTHY</span>
+</section>
+
+<section class="metric-grid">
+  <article class="card metric"><span>Internet</span><strong>Waiting for integration</strong></article>
+  <article class="card metric"><span>ISP Health</span><strong>Waiting for data</strong></article>
+  <article class="card metric"><span>UPS</span><strong>Optional</strong></article>
+  <article class="card metric"><span>Wi-Fi</span><strong>Optional</strong></article>
+</section>
+
+<section class="card">
+  <h2>AT Network Dashboard v2</h2>
+  <p>This page intentionally uses one shared theme and one navigation source. No customer-specific network details are hard-coded into the UI.</p>
+</section>
+{% endblock %}
