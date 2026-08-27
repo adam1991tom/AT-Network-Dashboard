@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from cryptography.fernet import Fernet, InvalidToken
 
 from app.config import CONFIG
@@ -36,6 +38,7 @@ DEFAULT_SETTINGS: dict[str, str] = {
 }
 
 SECRET_KEYS = {"unifi_api_key", "discord_webhook"}
+INSTALL_KEY_PATH = Path("/data/install.key")
 
 
 def ensure_defaults() -> None:
@@ -88,10 +91,23 @@ def set_settings(values: dict[str, object]) -> None:
         con.close()
 
 
+def _installation_key() -> bytes:
+    configured = (CONFIG.master_key or "").strip()
+    if configured and configured != "CHANGE_ME":
+        return configured.encode()
+
+    INSTALL_KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if INSTALL_KEY_PATH.exists():
+        return INSTALL_KEY_PATH.read_text(encoding="utf-8").strip().encode()
+
+    key = Fernet.generate_key()
+    INSTALL_KEY_PATH.write_text(key.decode(), encoding="utf-8")
+    INSTALL_KEY_PATH.chmod(0o600)
+    return key
+
+
 def _cipher() -> Fernet:
-    if not CONFIG.master_key or CONFIG.master_key == "CHANGE_ME":
-        raise RuntimeError("AT_MASTER_KEY must be generated for this installation")
-    return Fernet(CONFIG.master_key.encode())
+    return Fernet(_installation_key())
 
 
 def set_secret(key: str, value: str) -> None:
@@ -127,5 +143,5 @@ def get_secret(key: str) -> str | None:
         return None
     try:
         return _cipher().decrypt(row["encrypted_value"].encode()).decode()
-    except (InvalidToken, RuntimeError):
+    except (InvalidToken, RuntimeError, ValueError):
         return None
