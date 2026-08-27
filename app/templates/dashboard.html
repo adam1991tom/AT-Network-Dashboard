@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+<link rel="stylesheet" href="/static/monitoring.css">
 <section class="hero">
   <div>
     <h1>Dashboard</h1>
@@ -19,10 +20,7 @@
 
 <section class="card dashboard-card monitoring-card">
   <div class="panel-heading range-heading">
-    <div>
-      <h2>ISP Speed Performance</h2>
-      <p>UniFi gateway speed tests against your configured package and thresholds.</p>
-    </div>
+    <div><h2>ISP Speed Performance</h2><p>UniFi gateway speed tests against your configured package and thresholds.</p></div>
     <div class="range-buttons" data-range-group>
       <button class="range-button active" data-hours="24">24h</button>
       <button class="range-button" data-hours="168">7d</button>
@@ -36,24 +34,14 @@
 </section>
 
 <section class="card dashboard-card monitoring-card">
-  <div class="panel-heading">
-    <div>
-      <h2>Internet Quality</h2>
-      <p>Continuous latency, packet loss and reachability. Samples are stored every 30 seconds.</p>
-    </div>
-  </div>
+  <div class="panel-heading"><div><h2>Internet Quality</h2><p>Continuous latency, packet loss and reachability. Samples are stored every 30 seconds.</p></div></div>
   <div class="chart-legend" id="quality_legend"></div>
   <canvas class="history-chart" id="quality_chart" height="280"></canvas>
   <div class="empty-chart" id="quality_empty">Collecting internet-quality history…</div>
 </section>
 
 <section class="card dashboard-card monitoring-card">
-  <div class="panel-heading">
-    <div>
-      <h2>UCG / UniFi Gateway System Stats</h2>
-      <p>CPU, memory, temperature, WAN status and interface error tracking.</p>
-    </div>
-  </div>
+  <div class="panel-heading"><div><h2>UCG / UniFi Gateway System Stats</h2><p>CPU, memory, temperature, WAN status and interface error tracking.</p></div></div>
   <div class="chart-legend" id="gateway_legend"></div>
   <canvas class="history-chart" id="gateway_chart" height="280"></canvas>
   <div class="gateway-stats" id="gateway_stats"></div>
@@ -61,24 +49,14 @@
 </section>
 
 <section class="card dashboard-card monitoring-card">
-  <div class="panel-heading">
-    <div>
-      <h2>UPS / Power History</h2>
-      <p>UPS load, input/output voltage, battery voltage and mains state from NUTPI.</p>
-    </div>
-  </div>
+  <div class="panel-heading"><div><h2>UPS / Power History</h2><p>UPS load, input/output voltage, battery voltage and mains state from NUTPI.</p></div></div>
   <div class="chart-legend" id="ups_legend"></div>
   <canvas class="history-chart" id="ups_chart" height="280"></canvas>
   <div class="empty-chart" id="ups_empty">Waiting for UPS history…</div>
 </section>
 
 <section class="card dashboard-card monitoring-card">
-  <div class="panel-heading">
-    <div>
-      <h2>Wi-Fi Optimiser</h2>
-      <p>Access-point radio retries, channel utilisation, clients and recommended attention areas.</p>
-    </div>
-  </div>
+  <div class="panel-heading"><div><h2>Wi-Fi Optimiser</h2><p>Access-point radio retries, channel utilisation, clients and recommended attention areas.</p></div></div>
   <div class="chart-legend" id="wifi_legend"></div>
   <canvas class="history-chart" id="wifi_chart" height="300"></canvas>
   <div class="wifi-radio-grid" id="wifi_cards"></div>
