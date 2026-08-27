@@ -126,15 +126,29 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px v
   backdrop-filter: blur(14px);
 }
 :root[data-theme="light"] .settings-savebar { background: rgba(255,255,255,.96); }
-.primary-button {
-  border: 1px solid var(--accent-border);
+.primary-button,
+.secondary-button {
   border-radius: 9px;
-  background: var(--accent);
-  color: #07110b;
   font-weight: 800;
   padding: 10px 15px;
   cursor: pointer;
 }
+.primary-button {
+  border: 1px solid var(--accent-border);
+  background: var(--accent);
+  color: #07110b;
+}
+.secondary-button {
+  border: 1px solid var(--border);
+  background: #202938;
+  color: var(--text);
+}
+.secondary-button:hover { border-color: var(--accent-border); background: var(--accent-soft); }
+.test-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.test-status { color: var(--muted); font-size: .82rem; }
+.test-status.testing { color: #f59e0b; }
+.test-status.good { color: #4ade80; }
+.test-status.bad { color: #fb7185; }
 .footer { color: #66768a; font-size: .75rem; text-align: center; padding: 20px; }
 
 @media (max-width: 900px) {
