@@ -37,7 +37,6 @@ class UniFiClient:
         return {"ok": False, "message": "Unable to connect to UniFi"}
 
     def run_speedtest(self) -> dict[str, Any]:
-        """Ask the UniFi gateway to run its built-in WAN speed test."""
         attempts = [
             ("/proxy/network/api/s/default/cmd/devmgr", {"cmd": "speedtest", "wan": "WAN"}),
             ("/proxy/network/api/s/default/cmd/devmgr", {"cmd": "speedtest"}),
@@ -54,39 +53,50 @@ class UniFiClient:
                 errors.append(f"{path}: {exc}")
         return {"ok": False, "message": "Unable to start UniFi speed test", "details": errors[-3:]}
 
-    def history_probe(self, days: int = 365) -> dict[str, Any]:
-        """Probe retained UniFi report endpoints without importing or changing data."""
+    def retained_history(self, days: int = 365) -> dict[str, list[dict[str, Any]]]:
         days = max(1, min(int(days), 730))
         end_ms = int(time.time() * 1000)
         start_ms = end_ms - (days * 86400 * 1000)
-        attrs = ["bytes", "num_sta", "wan-rx_bytes", "wan-tx_bytes", "rx_bytes", "tx_bytes"]
+        attrs = [
+            "time", "datetime", "bytes", "num_sta",
+            "wan-rx_bytes", "wan-tx_bytes", "rx_bytes", "tx_bytes",
+        ]
         candidates = {
             "site_daily": "/proxy/network/api/s/default/stat/report/daily.site",
             "gateway_hourly": "/proxy/network/api/s/default/stat/report/hourly.gw",
             "ap_hourly": "/proxy/network/api/s/default/stat/report/hourly.ap",
             "site_hourly": "/proxy/network/api/s/default/stat/report/hourly.site",
         }
-        results: dict[str, Any] = {}
-        oldest: int | None = None
-        newest: int | None = None
-        total = 0
-
+        output: dict[str, list[dict[str, Any]]] = {}
         for name, path in candidates.items():
             rows: list[dict[str, Any]] = []
-            error = ""
-            payload = {"attrs": attrs, "start": start_ms, "end": end_ms}
             try:
-                response = self._post(path, payload)
+                response = self._post(path, {"attrs": attrs, "start": start_ms, "end": end_ms})
                 if response.ok:
                     body = response.json()
                     data = body.get("data", []) if isinstance(body, dict) else []
                     if isinstance(data, list):
                         rows = [r for r in data if isinstance(r, dict)]
-                else:
-                    error = f"HTTP {response.status_code}"
-            except Exception as exc:
-                error = str(exc)
+            except Exception:
+                rows = []
+            output[name] = rows
+        return output
 
+    def history_probe(self, days: int = 365) -> dict[str, Any]:
+        rows_by_source = self.retained_history(days)
+        results: dict[str, Any] = {}
+        oldest: int | None = None
+        newest: int | None = None
+        total = 0
+
+        endpoints = {
+            "site_daily": "/proxy/network/api/s/default/stat/report/daily.site",
+            "gateway_hourly": "/proxy/network/api/s/default/stat/report/hourly.gw",
+            "ap_hourly": "/proxy/network/api/s/default/stat/report/hourly.ap",
+            "site_hourly": "/proxy/network/api/s/default/stat/report/hourly.site",
+        }
+
+        for name, rows in rows_by_source.items():
             timestamps: list[int] = []
             for row in rows:
                 value = row.get("time") or row.get("timestamp")
@@ -107,13 +117,13 @@ class UniFiClient:
                 "records": len(rows),
                 "oldest": self._iso_ms(min(timestamps)) if timestamps else None,
                 "newest": self._iso_ms(max(timestamps)) if timestamps else None,
-                "error": error or None,
-                "endpoint": path,
+                "error": None,
+                "endpoint": endpoints[name],
             }
 
         return {
             "ok": total > 0,
-            "requested_days": days,
+            "requested_days": max(1, min(int(days), 730)),
             "total_records": total,
             "oldest": self._iso_ms(oldest) if oldest else None,
             "newest": self._iso_ms(newest) if newest else None,
