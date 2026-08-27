@@ -59,7 +59,6 @@ function activatePanel(panelId) {
   document.querySelectorAll(".settings-tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.panel === panelId);
   });
-
   document.querySelectorAll(".settings-panel").forEach((panel) => {
     panel.classList.toggle("active", panel.id === panelId);
   });
@@ -79,7 +78,6 @@ async function loadSettings() {
     textFields.forEach((id) => {
       if ($(id) && data[id] !== undefined) $(id).value = data[id];
     });
-
     checkboxFields.forEach((id) => {
       if ($(id) && data[id] !== undefined) $(id).checked = boolValue(data[id]);
     });
@@ -87,11 +85,9 @@ async function loadSettings() {
     $("unifi_key_status").textContent = data.unifi_api_key_configured
       ? "API key configured ✓"
       : "No API key stored";
-
     $("discord_status").textContent = data.discord_webhook_configured
       ? "Webhook configured ✓"
       : "No webhook stored";
-
     $("setup_state").textContent = boolValue(data.setup_complete)
       ? "Complete ✓"
       : "Setup required";
@@ -104,25 +100,26 @@ async function loadSettings() {
   }
 }
 
-async function saveSettings() {
-  const status = $("save_status");
+function collectPayload(includeSecrets = true) {
   const payload = {};
-
   textFields.forEach((id) => {
     if ($(id)) payload[id] = $(id).value;
   });
-
   checkboxFields.forEach((id) => {
     if ($(id)) payload[id] = $(id).checked ? "true" : "false";
   });
-
-  if ($("unifi_api_key").value.trim()) {
+  if (includeSecrets && $("unifi_api_key").value.trim()) {
     payload.unifi_api_key = $("unifi_api_key").value.trim();
   }
-  if ($("discord_webhook").value.trim()) {
+  if (includeSecrets && $("discord_webhook").value.trim()) {
     payload.discord_webhook = $("discord_webhook").value.trim();
   }
+  return payload;
+}
 
+async function saveSettings() {
+  const status = $("save_status");
+  const payload = collectPayload(true);
   status.textContent = "Saving…";
 
   try {
@@ -131,8 +128,8 @@ async function saveSettings() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.detail || body.message || `HTTP ${response.status}`);
 
     $("unifi_api_key").value = "";
     $("discord_webhook").value = "";
@@ -143,12 +140,38 @@ async function saveSettings() {
   }
 }
 
+async function runTest(kind, statusId) {
+  const status = $(statusId);
+  status.textContent = "Testing…";
+  status.className = "test-status testing";
+
+  try {
+    const response = await fetch(`/api/settings/test/${kind}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(collectPayload(true)),
+    });
+    const result = await response.json();
+    status.textContent = result.ok
+      ? `Connected ✓${result.status ? ` · ${result.status}` : ""}`
+      : `Failed · ${result.message || "Connection test failed"}`;
+    status.className = `test-status ${result.ok ? "good" : "bad"}`;
+    status.title = result.output || result.message || "";
+  } catch (error) {
+    status.textContent = `Error · ${error}`;
+    status.className = "test-status bad";
+  }
+}
+
 $("save_settings").addEventListener("click", saveSettings);
+$("test_unifi")?.addEventListener("click", () => runTest("unifi", "unifi_test_status"));
+$("test_ups")?.addEventListener("click", () => runTest("ups", "ups_test_status"));
+$("test_discord")?.addEventListener("click", () => runTest("discord", "discord_test_status"));
+$("test_ping")?.addEventListener("click", () => runTest("ping", "ping_test_status"));
 
 if ($("accent")) {
   $("accent").addEventListener("change", () => applyAccent($("accent").value));
 }
-
 if ($("theme")) {
   $("theme").addEventListener("change", () => applyTheme($("theme").value));
 }
