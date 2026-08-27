@@ -65,6 +65,10 @@
         <label>Ping target<input id="ping_target"></label>
         <label>Speed-test interval minutes<input id="speedtest_minutes" type="number"></label>
       </div>
+      <div class="test-row">
+        <button type="button" class="secondary-button" id="test_ping">Test Ping Target</button>
+        <span class="test-status" id="ping_test_status">Not tested</span>
+      </div>
     </section>
 
     <section class="card settings-content settings-panel" id="integrations">
@@ -79,6 +83,10 @@
           </label>
           <label>API key<input id="unifi_api_key" type="password" placeholder="Leave blank to keep current key"><span class="secret-status" id="unifi_key_status"></span></label>
         </div>
+        <div class="test-row">
+          <button type="button" class="secondary-button" id="test_unifi">Test UniFi Connection</button>
+          <span class="test-status" id="unifi_test_status">Not tested</span>
+        </div>
       </div>
 
       <div class="integration-block">
@@ -92,11 +100,19 @@
           <label>UPS name<input id="ups_name"></label>
           <label>NUTPI status path<input id="nutpi_status_path"></label>
         </div>
+        <div class="test-row">
+          <button type="button" class="secondary-button" id="test_ups">Test UPS / NUT</button>
+          <span class="test-status" id="ups_test_status">Not tested</span>
+        </div>
       </div>
 
       <div class="integration-block">
         <div class="toggle-row"><strong>Discord</strong><input id="discord_enabled" type="checkbox"></div>
         <label>Webhook<input id="discord_webhook" type="password" placeholder="Leave blank to keep current webhook"><span class="secret-status" id="discord_status"></span></label>
+        <div class="test-row">
+          <button type="button" class="secondary-button" id="test_discord">Send Discord Test</button>
+          <span class="test-status" id="discord_test_status">Not tested</span>
+        </div>
       </div>
     </section>
 
