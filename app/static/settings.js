@@ -1,34 +1,17 @@
 const $ = (id) => document.getElementById(id);
 
 const textFields = [
-  "application_name",
-  "application_subtitle",
-  "timezone",
-  "theme",
-  "accent",
-  "default_range_hours",
-  "isp_provider",
-  "expected_download",
-  "expected_upload",
-  "warning_threshold",
-  "major_threshold",
-  "critical_threshold",
-  "ping_target",
-  "speedtest_minutes",
-  "unifi_url",
-  "unifi_verify_ssl",
-  "ups_type",
-  "ups_host",
-  "ups_port",
-  "ups_name",
-  "nutpi_status_path",
+  "application_name", "application_subtitle", "timezone", "theme", "accent", "default_range_hours",
+  "isp_provider", "expected_download", "expected_upload", "warning_threshold", "major_threshold",
+  "critical_threshold", "ping_target", "speedtest_minutes", "unifi_url", "unifi_verify_ssl",
+  "ups_type", "ups_host", "ups_port", "ups_name", "nutpi_status_path",
+  "wifi_warning_threshold", "wifi_major_threshold", "wifi_critical_threshold", "wifi_persist_minutes",
+  "wifi_recovery_threshold", "wifi_recovery_minutes", "notification_cooldown_minutes",
 ];
 
 const checkboxFields = [
-  "isp_enabled",
-  "unifi_enabled",
-  "ups_enabled",
-  "discord_enabled",
+  "isp_enabled", "unifi_enabled", "ups_enabled", "discord_enabled",
+  "notify_internet", "notify_wifi", "notify_power",
 ];
 
 function boolValue(value) {
@@ -42,7 +25,6 @@ function applyAccent(accent) {
     purple: { hex: "#a855f7", rgb: "168,85,247" },
     amber: { hex: "#f59e0b", rgb: "245,158,11" },
   };
-
   const selected = palette[accent] || palette.green;
   const root = document.documentElement;
   root.style.setProperty("--accent", selected.hex);
@@ -62,11 +44,38 @@ function activatePanel(panelId) {
   document.querySelectorAll(".settings-panel").forEach((panel) => {
     panel.classList.toggle("active", panel.id === panelId);
   });
+  history.replaceState(null, "", `#${panelId}`);
 }
 
 document.querySelectorAll(".settings-tab").forEach((tab) => {
   tab.addEventListener("click", () => activatePanel(tab.dataset.panel));
 });
+
+function collectPayload(includeSecrets = true) {
+  const payload = {};
+  textFields.forEach((id) => {
+    if ($(id)) payload[id] = $(id).value;
+  });
+  checkboxFields.forEach((id) => {
+    if ($(id)) payload[id] = $(id).checked ? "true" : "false";
+  });
+  if (includeSecrets && $("unifi_api_key")?.value.trim()) payload.unifi_api_key = $("unifi_api_key").value.trim();
+  if (includeSecrets && $("discord_webhook")?.value.trim()) payload.discord_webhook = $("discord_webhook").value.trim();
+  return payload;
+}
+
+async function loadSystemInfo() {
+  try {
+    const response = await fetch("/api/system/info", { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json();
+    $("system_environment").textContent = data.environment || "—";
+    $("system_host").textContent = data.hostname || "—";
+    $("system_python").textContent = data.python || "—";
+    $("system_database").textContent = data.database || "—";
+    $("security_encryption").textContent = data.encryption?.ok ? `Active ✓ · ${data.encryption.source}` : "Problem detected";
+  } catch (_) {}
+}
 
 async function loadSettings() {
   const status = $("save_status");
@@ -82,57 +91,36 @@ async function loadSettings() {
       if ($(id) && data[id] !== undefined) $(id).checked = boolValue(data[id]);
     });
 
-    $("unifi_key_status").textContent = data.unifi_api_key_configured
-      ? "API key configured ✓"
-      : "No API key stored";
-    $("discord_status").textContent = data.discord_webhook_configured
-      ? "Webhook configured ✓"
-      : "No webhook stored";
-    $("setup_state").textContent = boolValue(data.setup_complete)
-      ? "Complete ✓"
-      : "Setup required";
+    $("unifi_key_status").textContent = data.unifi_api_key_configured ? "API key configured ✓" : "No API key stored";
+    $("discord_status").textContent = data.discord_webhook_configured ? "Webhook configured ✓" : "No webhook stored";
+    $("security_unifi").textContent = data.unifi_api_key_configured ? "Encrypted / configured ✓" : "Not configured";
+    $("security_discord").textContent = data.discord_webhook_configured ? "Encrypted / configured ✓" : "Not configured";
+    $("setup_state").textContent = boolValue(data.setup_complete) ? "Complete ✓" : "Setup required";
+    $("settings_health").textContent = boolValue(data.setup_complete) ? "CONFIGURED" : "SETUP REQUIRED";
+    $("settings_health").className = `status-pill ${boolValue(data.setup_complete) ? "good" : "warn"}`;
 
     applyAccent(data.accent || "green");
     applyTheme(data.theme || "dark");
     status.textContent = "Settings loaded";
+    await loadSystemInfo();
   } catch (error) {
     status.textContent = `Failed to load settings: ${error}`;
   }
 }
 
-function collectPayload(includeSecrets = true) {
-  const payload = {};
-  textFields.forEach((id) => {
-    if ($(id)) payload[id] = $(id).value;
-  });
-  checkboxFields.forEach((id) => {
-    if ($(id)) payload[id] = $(id).checked ? "true" : "false";
-  });
-  if (includeSecrets && $("unifi_api_key").value.trim()) {
-    payload.unifi_api_key = $("unifi_api_key").value.trim();
-  }
-  if (includeSecrets && $("discord_webhook").value.trim()) {
-    payload.discord_webhook = $("discord_webhook").value.trim();
-  }
-  return payload;
-}
-
 async function saveSettings() {
   const status = $("save_status");
-  const payload = collectPayload(true);
   status.textContent = "Saving…";
-
   try {
     const response = await fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(collectPayload(true)),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.detail || body.message || `HTTP ${response.status}`);
-
-    $("unifi_api_key").value = "";
-    $("discord_webhook").value = "";
+    if ($("unifi_api_key")) $("unifi_api_key").value = "";
+    if ($("discord_webhook")) $("discord_webhook").value = "";
     status.textContent = "Saved ✓";
     await loadSettings();
   } catch (error) {
@@ -144,7 +132,6 @@ async function runTest(kind, statusId) {
   const status = $(statusId);
   status.textContent = "Testing…";
   status.className = "test-status testing";
-
   try {
     const response = await fetch(`/api/settings/test/${kind}`, {
       method: "POST",
@@ -152,9 +139,17 @@ async function runTest(kind, statusId) {
       body: JSON.stringify(collectPayload(true)),
     });
     const result = await response.json();
-    status.textContent = result.ok
-      ? `Connected ✓${result.status ? ` · ${result.status}` : ""}`
-      : `Failed · ${result.message || "Connection test failed"}`;
+    let extra = "";
+    if (kind === "ups" && result.ok) {
+      const bits = [];
+      if (result.status) bits.push(result.status);
+      if (result.load !== undefined && result.load !== null) bits.push(`Load ${result.load}%`);
+      if (result.input_voltage) bits.push(`Input ${result.input_voltage} V`);
+      extra = bits.length ? ` · ${bits.join(" · ")}` : "";
+    } else if (result.status) {
+      extra = ` · ${result.status}`;
+    }
+    status.textContent = result.ok ? `Connected ✓${extra}` : `Failed · ${result.message || "Connection test failed"}`;
     status.className = `test-status ${result.ok ? "good" : "bad"}`;
     status.title = result.output || result.message || "";
   } catch (error) {
@@ -163,17 +158,61 @@ async function runTest(kind, statusId) {
   }
 }
 
-$("save_settings").addEventListener("click", saveSettings);
+async function loadChanges() {
+  if (!$("changes_body")) return;
+  try {
+    const response = await fetch("/api/network-changes", { cache: "no-store" });
+    const data = await response.json();
+    $("changes_body").innerHTML = data.items?.length
+      ? data.items.map((item) => `<tr><td>${escapeHtml(item.ts)}</td><td>${escapeHtml(item.category)}</td><td><strong>${escapeHtml(item.summary)}</strong>${item.details ? `<small>${escapeHtml(item.details)}</small>` : ""}</td></tr>`).join("")
+      : '<tr><td colspan="3" class="muted">No network changes recorded yet.</td></tr>';
+  } catch (_) {
+    $("changes_body").innerHTML = '<tr><td colspan="3" class="bad-text">Unable to load changes.</td></tr>';
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
+}
+
+async function recordChange() {
+  const status = $("change_status");
+  const payload = {
+    category: $("change_category").value,
+    summary: $("change_summary").value.trim(),
+    details: $("change_details").value.trim(),
+  };
+  status.textContent = "Recording…";
+  try {
+    const response = await fetch("/api/network-changes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.message || `HTTP ${response.status}`);
+    $("change_summary").value = "";
+    $("change_details").value = "";
+    status.textContent = "Recorded ✓";
+    status.className = "test-status good";
+    await loadChanges();
+  } catch (error) {
+    status.textContent = `Failed · ${error}`;
+    status.className = "test-status bad";
+  }
+}
+
+$("save_settings")?.addEventListener("click", saveSettings);
 $("test_unifi")?.addEventListener("click", () => runTest("unifi", "unifi_test_status"));
 $("test_ups")?.addEventListener("click", () => runTest("ups", "ups_test_status"));
 $("test_discord")?.addEventListener("click", () => runTest("discord", "discord_test_status"));
 $("test_ping")?.addEventListener("click", () => runTest("ping", "ping_test_status"));
+$("record_change")?.addEventListener("click", recordChange);
+$("accent")?.addEventListener("change", () => applyAccent($("accent").value));
+$("theme")?.addEventListener("change", () => applyTheme($("theme").value));
 
-if ($("accent")) {
-  $("accent").addEventListener("change", () => applyAccent($("accent").value));
-}
-if ($("theme")) {
-  $("theme").addEventListener("change", () => applyTheme($("theme").value));
-}
+const requestedPanel = location.hash.replace("#", "");
+if (requestedPanel && document.getElementById(requestedPanel)) activatePanel(requestedPanel);
 
 loadSettings();
+loadChanges();

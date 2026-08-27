@@ -15,6 +15,7 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "theme": "dark",
     "accent": "green",
     "default_range_hours": "24",
+
     "isp_enabled": "true",
     "isp_provider": "",
     "expected_download": "0",
@@ -24,16 +25,32 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "critical_threshold": "0",
     "ping_target": "1.1.1.1",
     "speedtest_minutes": "30",
+
     "unifi_enabled": "false",
     "unifi_url": "",
     "unifi_verify_ssl": "false",
+
     "ups_enabled": "false",
     "ups_type": "nutpi_http",
     "ups_host": "",
     "ups_port": "3493",
     "ups_name": "",
     "nutpi_status_path": "/api/nutpi/status.cgi",
+
     "discord_enabled": "false",
+
+    "wifi_warning_threshold": "35",
+    "wifi_major_threshold": "40",
+    "wifi_critical_threshold": "50",
+    "wifi_persist_minutes": "10",
+    "wifi_recovery_threshold": "20",
+    "wifi_recovery_minutes": "10",
+
+    "notify_internet": "true",
+    "notify_wifi": "true",
+    "notify_power": "true",
+    "notification_cooldown_minutes": "15",
+
     "setup_complete": "false",
 }
 
@@ -104,6 +121,16 @@ def _installation_key() -> bytes:
     INSTALL_KEY_PATH.write_text(key.decode(), encoding="utf-8")
     INSTALL_KEY_PATH.chmod(0o600)
     return key
+
+
+def encryption_status() -> dict[str, str | bool]:
+    try:
+        key = _installation_key()
+        Fernet(key)
+        source = "environment" if (CONFIG.master_key or "").strip() not in {"", "CHANGE_ME"} else "installation key"
+        return {"ok": True, "source": source}
+    except Exception as exc:
+        return {"ok": False, "source": "unavailable", "message": str(exc)}
 
 
 def _cipher() -> Fernet:
