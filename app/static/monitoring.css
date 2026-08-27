@@ -1,4 +1,4 @@
-.monitoring-card { margin-bottom: 16px; }
+.monitoring-card { margin-bottom: 16px; min-width: 0; width: 100%; box-sizing: border-box; overflow: hidden; }
 .range-heading { align-items: center; }
 .range-buttons { display: flex; gap: 7px; flex-wrap: wrap; }
 .range-button {
@@ -8,7 +8,8 @@
 .range-button:hover { border-color: var(--accent-border); }
 .range-button.active { background: var(--accent); border-color: var(--accent-border); color: #07110b; }
 .history-chart {
-  width: 100%; display: block; border-radius: 11px; background: rgba(4,9,15,.34);
+  width: 100% !important; max-width: 100%; min-width: 0; box-sizing: border-box; display: block;
+  border-radius: 11px; background: rgba(4,9,15,.34);
   border: 1px solid rgba(41,50,65,.55); margin-top: 8px;
 }
 .chart-legend { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; min-height: 25px; color: var(--muted); font-size: .76rem; }
