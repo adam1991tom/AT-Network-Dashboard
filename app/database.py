@@ -125,6 +125,33 @@ def initialise() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_wifi_history_ts ON wifi_history(ts);
             CREATE INDEX IF NOT EXISTS idx_wifi_history_ap ON wifi_history(ap_name, band, ts);
+
+            CREATE TABLE IF NOT EXISTS unifi_wan_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                epoch_ms INTEGER NOT NULL,
+                bucket TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                object_id TEXT NOT NULL,
+                clients INTEGER,
+                rx_bytes REAL,
+                tx_bytes REAL,
+                UNIQUE(epoch_ms, bucket, scope, object_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_unifi_wan_history_ts ON unifi_wan_history(ts);
+
+            CREATE TABLE IF NOT EXISTS unifi_ap_traffic_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                epoch_ms INTEGER NOT NULL,
+                device_id TEXT NOT NULL,
+                clients INTEGER,
+                bytes REAL,
+                rx_bytes REAL,
+                tx_bytes REAL,
+                UNIQUE(epoch_ms, device_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_unifi_ap_traffic_history_ts ON unifi_ap_traffic_history(ts);
             """
         )
         con.commit()
