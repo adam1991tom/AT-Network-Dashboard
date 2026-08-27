@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -9,10 +10,13 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.config import CONFIG
 from app.database import DB_PATH, initialise
-from app.settings_store import all_settings, set_secret, set_settings
+from app.integrations.discord import DiscordNotifier
+from app.integrations.nut import NutPiHttpClient
+from app.integrations.unifi import UniFiClient
+from app.settings_store import all_settings, get_secret, set_secret, set_settings
 
 
-VERSION = "2.0.0-dev2"
+VERSION = "2.0.0-dev3"
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
@@ -68,6 +72,74 @@ async def api_save_settings(request: Request) -> dict:
     return {
         "ok": True,
         "settings": all_settings(),
+    }
+
+
+@app.post("/api/settings/test/unifi")
+async def api_test_unifi(request: Request) -> dict:
+    payload = await request.json()
+    url = str(payload.get("unifi_url", "")).strip()
+    api_key = str(payload.get("unifi_api_key", "")).strip() or (get_secret("unifi_api_key") or "")
+    verify_ssl = str(payload.get("unifi_verify_ssl", "false")).lower() == "true"
+
+    if not url:
+        return {"ok": False, "message": "Enter a UniFi gateway/controller URL"}
+    if not api_key:
+        return {"ok": False, "message": "Enter or save a UniFi API key"}
+
+    return UniFiClient(url, api_key, verify_ssl).test_connection()
+
+
+@app.post("/api/settings/test/ups")
+async def api_test_ups(request: Request) -> dict:
+    payload = await request.json()
+    ups_type = str(payload.get("ups_type", "nutpi_http"))
+    host = str(payload.get("ups_host", "")).strip()
+    status_path = str(payload.get("nutpi_status_path", "/api/nutpi/status.cgi")).strip()
+
+    if not host:
+        return {"ok": False, "message": "Enter the UPS/NUT host or IP address"}
+
+    if ups_type == "nutpi_http":
+        return NutPiHttpClient(host, status_path).test_connection()
+
+    return {
+        "ok": False,
+        "message": "Direct NUT testing is not connected yet; use NUTPI HTTP API for now",
+    }
+
+
+@app.post("/api/settings/test/discord")
+async def api_test_discord(request: Request) -> dict:
+    payload = await request.json()
+    webhook = str(payload.get("discord_webhook", "")).strip() or (get_secret("discord_webhook") or "")
+    if not webhook:
+        return {"ok": False, "message": "Enter or save a Discord webhook"}
+    return DiscordNotifier(webhook).send("✅ AT Network Dashboard v2 test notification")
+
+
+@app.post("/api/settings/test/ping")
+async def api_test_ping(request: Request) -> dict:
+    payload = await request.json()
+    target = str(payload.get("ping_target", "")).strip()
+    if not target:
+        return {"ok": False, "message": "Enter a ping target"}
+
+    try:
+        result = subprocess.run(
+            ["ping", "-c", "3", "-W", "2", target],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception as exc:
+        return {"ok": False, "message": str(exc)}
+
+    return {
+        "ok": result.returncode == 0,
+        "message": "Ping successful" if result.returncode == 0 else "Ping failed",
+        "output": (result.stdout or result.stderr)[-1500:],
     }
 
 
