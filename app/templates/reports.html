@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero"><div><h1>Reports</h1><p>Export the monitoring data collected by AT Network Dashboard.</p></div></section>
+<section class="metric-grid">
+  <article class="card metric"><span>Speed Tests</span><strong>{{ counts.speedtests }}</strong><small>stored results</small></article>
+  <article class="card metric"><span>Ping Samples</span><strong>{{ counts.ping }}</strong><small>internet quality</small></article>
+  <article class="card metric"><span>Gateway Samples</span><strong>{{ counts.gateway }}</strong><small>UCG / UniFi stats</small></article>
+  <article class="card metric"><span>UPS Samples</span><strong>{{ counts.ups }}</strong><small>power history</small></article>
+  <article class="card metric"><span>Wi-Fi Samples</span><strong>{{ counts.wifi }}</strong><small>radio history</small></article>
+  <article class="card metric"><span>Imported WAN</span><strong>{{ counts.wan }}</strong><small>UniFi retained history</small></article>
+</section>
+<section class="card dashboard-card">
+  <div class="panel-heading"><div><h2>Data Exports</h2><p>Download CSV files for ISP/provider evidence or further analysis.</p></div></div>
+  <div class="button-grid">
+    <a class="secondary-button" href="/api/reports/export/speedtests.csv">ISP Speed Tests CSV</a>
+    <a class="secondary-button" href="/api/reports/export/ping.csv">Ping & Packet Loss CSV</a>
+    <a class="secondary-button" href="/api/reports/export/gateway.csv">Gateway Stats CSV</a>
+    <a class="secondary-button" href="/api/reports/export/ups.csv">UPS History CSV</a>
+    <a class="secondary-button" href="/api/reports/export/wifi.csv">Wi-Fi History CSV</a>
+    <a class="secondary-button" href="/api/reports/export/wan.csv">UniFi WAN History CSV</a>
+  </div>
+</section>
+<section class="card dashboard-card"><h2>PDF Reports</h2><p class="muted">The consolidated PDF reporting engine is the next report feature to port into v2. CSV exports above are live now and use the current v2 database.</p></section>
+{% endblock %}
