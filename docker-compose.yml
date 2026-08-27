@@ -1,0 +1,14 @@
+services:
+  at-network-dashboard:
+    build: .
+    container_name: at-network-dashboard-v2
+    restart: unless-stopped
+    ports:
+      - "3082:3080"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+      - /etc/localtime:/etc/localtime:ro
+    security_opt:
+      - no-new-privileges:true
