@@ -46,11 +46,13 @@ function installExtraControls() {
   if (system && !$("history_probe")) {
     const block = document.createElement("div"); block.className = "integration-block"; block.style.marginTop = "18px";
     block.innerHTML = `
-      <div class="integration-title"><div><strong>Historical Data Import</strong><span class="muted">Read-only check of history still retained by the configured UniFi controller.</span></div></div>
+      <div class="integration-title"><div><strong>Historical Data Import</strong><span class="muted">Check and import timestamped history retained by the configured UniFi controller. Imports are safe to run more than once.</span></div></div>
       <div class="field-grid"><label>Look back<select id="history_probe_days"><option value="90">90 Days</option><option value="180">180 Days</option><option value="365" selected>1 Year</option><option value="730">2 Years</option></select></label></div>
-      <div class="test-row"><button type="button" class="secondary-button" id="history_probe">Check UniFi History</button><span class="test-status" id="history_probe_status">Not checked</span></div>
+      <div class="test-row"><button type="button" class="secondary-button" id="history_probe">Check UniFi History</button><button type="button" class="primary-button" id="history_import">Import UniFi History</button><span class="test-status" id="history_probe_status">Not checked</span></div>
       <div id="history_probe_results" class="info-banner" style="display:none"></div>`;
-    system.appendChild(block); $("history_probe").addEventListener("click", probeHistory);
+    system.appendChild(block);
+    $("history_probe").addEventListener("click", probeHistory);
+    $("history_import").addEventListener("click", importHistory);
   }
 }
 
@@ -87,12 +89,34 @@ async function runSpeedTest() {
   try { const response=await fetch("/api/settings/test/speedtest",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(collectPayload(true))}); const result=await response.json(); status.textContent=result.ok?"Started ✓ · Results will appear on the Dashboard when UniFi completes the test":`Failed · ${result.message || "Could not start test"}`; status.className=`test-status ${result.ok?"good":"bad"}`; } catch(error){status.textContent=`Error · ${error}`;status.className="test-status bad";}
 }
 
+function renderHistoryResults(data, importedText = "") {
+  const results=$("history_probe_results");
+  const sources=Object.entries(data.sources||{}).map(([name,s])=>`<div><strong>${escapeHtml(name)}</strong>: ${s.records||0} records${s.oldest?` · ${escapeHtml(s.oldest)} → ${escapeHtml(s.newest)}`:""}${s.error?` · ${escapeHtml(s.error)}`:""}</div>`).join("");
+  results.innerHTML=`<strong>UniFi retained history</strong><div style="margin-top:8px">Overall: ${escapeHtml(data.oldest||"—")} → ${escapeHtml(data.newest||"—")}</div>${sources}${importedText?`<div style="margin-top:10px"><strong>${escapeHtml(importedText)}</strong></div>`:""}`;
+  results.style.display="block";
+}
+
 async function probeHistory() {
   const status=$("history_probe_status"), results=$("history_probe_results"); status.textContent="Checking retained UniFi history…"; status.className="test-status testing"; results.style.display="none";
   const payload=collectPayload(true); payload.history_probe_days=$("history_probe_days").value;
-  try { const response=await fetch("/api/settings/test/unifi-history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}); const data=await response.json(); status.textContent=data.ok?`Found history ✓ · ${data.total_records} records`:`No history found · ${data.message || "Probe failed"}`; status.className=`test-status ${data.ok?"good":"bad"}`;
-    const sources=Object.entries(data.sources||{}).map(([name,s])=>`<div><strong>${escapeHtml(name)}</strong>: ${s.records||0} records${s.oldest?` · ${escapeHtml(s.oldest)} → ${escapeHtml(s.newest)}`:""}${s.error?` · ${escapeHtml(s.error)}`:""}</div>`).join(""); results.innerHTML=`<strong>UniFi retained-history probe</strong><div style="margin-top:8px">Overall: ${escapeHtml(data.oldest||"—")} → ${escapeHtml(data.newest||"—")}</div>${sources}`; results.style.display="block";
+  try { const response=await fetch("/api/settings/test/unifi-history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}); const data=await response.json(); status.textContent=data.ok?`Found history ✓ · ${data.total_records} records`:`No history found · ${data.message || "Probe failed"}`; status.className=`test-status ${data.ok?"good":"bad"}`; renderHistoryResults(data);
   } catch(error){status.textContent=`Error · ${error}`;status.className="test-status bad";}
+}
+
+async function importHistory() {
+  const status=$("history_probe_status");
+  status.textContent="Importing retained UniFi history…"; status.className="test-status testing";
+  const payload=collectPayload(true); payload.history_probe_days=$("history_probe_days").value;
+  try {
+    const response=await fetch("/api/settings/import/unifi-history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const data=await response.json();
+    if(!response.ok||!data.ok) throw new Error(data.message||`HTTP ${response.status}`);
+    status.textContent=`Imported ✓ · ${data.inserted.wan + data.inserted.ap} new records`;
+    status.className="test-status good";
+    const probeResponse=await fetch("/api/settings/test/unifi-history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const probe=await probeResponse.json();
+    renderHistoryResults(probe, `Database totals: ${data.totals.wan} WAN · ${data.totals.ap} AP records`);
+  } catch(error){status.textContent=`Import failed · ${error}`;status.className="test-status bad";}
 }
 
 async function loadChanges() { if(!$("changes_body"))return; try{const response=await fetch("/api/network-changes",{cache:"no-store"});const data=await response.json();$("changes_body").innerHTML=data.items?.length?data.items.map((item)=>`<tr><td>${escapeHtml(item.ts)}</td><td>${escapeHtml(item.category)}</td><td><strong>${escapeHtml(item.summary)}</strong>${item.details?`<small>${escapeHtml(item.details)}</small>`:""}</td></tr>`).join(""):'<tr><td colspan="3" class="muted">No network changes recorded yet.</td></tr>';}catch(_){$("changes_body").innerHTML='<tr><td colspan="3" class="bad-text">Unable to load changes.</td></tr>';}}
