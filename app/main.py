@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import platform
-import sqlite3
 import subprocess
 from pathlib import Path
 
@@ -15,6 +14,8 @@ from app.database import DB_PATH, connect, initialise
 from app.integrations.discord import DiscordNotifier
 from app.integrations.nut import NutPiHttpClient
 from app.integrations.unifi import UniFiClient
+from app.monitoring import start_monitoring
+from app.monitoring_routes import router as monitoring_router
 from app.settings_store import (
     all_settings,
     encryption_status,
@@ -24,11 +25,12 @@ from app.settings_store import (
 )
 
 
-VERSION = "2.0.0-dev4"
+VERSION = "2.0.0-dev5"
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="AT Network Dashboard", version=VERSION)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+app.include_router(monitoring_router)
 
 templates = Environment(
     loader=FileSystemLoader(BASE_DIR / "templates"),
@@ -66,6 +68,7 @@ def _ping(target: str) -> dict:
 @app.on_event("startup")
 def startup() -> None:
     initialise()
+    start_monitoring()
 
 
 @app.get("/api/health")
@@ -87,15 +90,12 @@ def api_settings() -> dict:
 async def api_save_settings(request: Request) -> dict:
     payload = await request.json()
     set_settings(payload)
-
     unifi_api_key = str(payload.get("unifi_api_key", "")).strip()
     discord_webhook = str(payload.get("discord_webhook", "")).strip()
     if unifi_api_key:
         set_secret("unifi_api_key", unifi_api_key)
     if discord_webhook:
         set_secret("discord_webhook", discord_webhook)
-
-    # Mark initial setup complete once the user has successfully saved the configuration.
     set_settings({"setup_complete": "true"})
     return {"ok": True, "settings": all_settings()}
 
@@ -199,7 +199,6 @@ def api_dashboard_summary() -> dict:
         "ups": {"enabled": _bool(cfg.get("ups_enabled")), "ok": None},
         "wifi": {"enabled": _bool(cfg.get("unifi_enabled")), "ok": None},
     }
-
     if summary["internet"]["enabled"]:  # type: ignore[index]
         ping = _ping(str(cfg.get("ping_target", "1.1.1.1")))
         summary["internet"] = {
@@ -208,7 +207,6 @@ def api_dashboard_summary() -> dict:
             "target": cfg.get("ping_target", "1.1.1.1"),
             "provider": cfg.get("isp_provider", ""),
         }
-
     if summary["unifi"]["enabled"]:  # type: ignore[index]
         key = get_secret("unifi_api_key") or ""
         url = str(cfg.get("unifi_url", ""))
@@ -219,7 +217,6 @@ def api_dashboard_summary() -> dict:
         else:
             summary["unifi"] = {"enabled": True, "ok": False, "message": "Configuration required"}
             summary["wifi"] = {"enabled": True, "ok": False}
-
     if summary["ups"]["enabled"]:  # type: ignore[index]
         if str(cfg.get("ups_type", "nutpi_http")) == "nutpi_http":
             test = NutPiHttpClient(
@@ -229,7 +226,6 @@ def api_dashboard_summary() -> dict:
             summary["ups"] = {"enabled": True, **test}
         else:
             summary["ups"] = {"enabled": True, "ok": False, "message": "Direct NUT not connected"}
-
     return summary
 
 
