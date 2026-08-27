@@ -29,38 +29,45 @@
     </div>
   </div>
   <div class="chart-legend" id="speed_legend"></div>
-  <canvas class="history-chart" id="speed_chart" height="320"></canvas>
-  <div class="empty-chart" id="speed_empty">Waiting for the first UniFi gateway speed-test result…</div>
+  <canvas class="history-chart" id="speed_chart" data-chart-height="320"></canvas>
+  <div class="empty-chart" id="speed_empty">No speed-test data is stored in the selected range yet.</div>
 </section>
 
 <section class="card dashboard-card monitoring-card">
   <div class="panel-heading"><div><h2>Internet Quality</h2><p>Continuous latency, packet loss and reachability. Samples are stored every 30 seconds.</p></div></div>
   <div class="chart-legend" id="quality_legend"></div>
-  <canvas class="history-chart" id="quality_chart" height="280"></canvas>
-  <div class="empty-chart" id="quality_empty">Collecting internet-quality history…</div>
+  <canvas class="history-chart" id="quality_chart" data-chart-height="280"></canvas>
+  <div class="empty-chart" id="quality_empty">No internet-quality samples are stored in the selected range yet.</div>
+</section>
+
+<section class="card dashboard-card monitoring-card">
+  <div class="panel-heading"><div><h2>UniFi WAN Usage History</h2><p>Historical WAN receive/transmit usage retained by the UniFi controller. Long ranges use daily buckets; shorter ranges use hourly gateway buckets.</p></div></div>
+  <div class="chart-legend" id="wan_legend"></div>
+  <canvas class="history-chart" id="wan_chart" data-chart-height="280"></canvas>
+  <div class="empty-chart" id="wan_empty">Import retained UniFi history from Settings → System to populate this graph.</div>
 </section>
 
 <section class="card dashboard-card monitoring-card">
   <div class="panel-heading"><div><h2>UCG / UniFi Gateway System Stats</h2><p>CPU, memory, temperature, WAN status and interface error tracking.</p></div></div>
   <div class="chart-legend" id="gateway_legend"></div>
-  <canvas class="history-chart" id="gateway_chart" height="280"></canvas>
+  <canvas class="history-chart" id="gateway_chart" data-chart-height="280"></canvas>
   <div class="gateway-stats" id="gateway_stats"></div>
-  <div class="empty-chart" id="gateway_empty">Waiting for UniFi gateway statistics…</div>
+  <div class="empty-chart" id="gateway_empty">No gateway system-stat samples are stored in the selected range yet.</div>
 </section>
 
 <section class="card dashboard-card monitoring-card">
   <div class="panel-heading"><div><h2>UPS / Power History</h2><p>UPS load, input/output voltage, battery voltage and mains state from NUTPI.</p></div></div>
   <div class="chart-legend" id="ups_legend"></div>
-  <canvas class="history-chart" id="ups_chart" height="280"></canvas>
-  <div class="empty-chart" id="ups_empty">Waiting for UPS history…</div>
+  <canvas class="history-chart" id="ups_chart" data-chart-height="280"></canvas>
+  <div class="empty-chart" id="ups_empty">No UPS samples are stored in the selected range yet.</div>
 </section>
 
 <section class="card dashboard-card monitoring-card">
   <div class="panel-heading"><div><h2>Wi-Fi Optimiser</h2><p>Access-point radio retries, channel utilisation, clients and recommended attention areas.</p></div></div>
   <div class="chart-legend" id="wifi_legend"></div>
-  <canvas class="history-chart" id="wifi_chart" height="300"></canvas>
+  <canvas class="history-chart" id="wifi_chart" data-chart-height="300"></canvas>
   <div class="wifi-radio-grid" id="wifi_cards"></div>
-  <div class="empty-chart" id="wifi_empty">Waiting for UniFi access-point radio statistics…</div>
+  <div class="empty-chart" id="wifi_empty">No Wi-Fi radio samples are stored in the selected range yet.</div>
 </section>
 
 <script src="/static/dashboard.js"></script>

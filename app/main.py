@@ -18,7 +18,7 @@ from app.monitoring import start_monitoring
 from app.monitoring_routes import router as monitoring_router
 from app.settings_store import all_settings, encryption_status, get_secret, set_secret, set_settings
 
-VERSION = "2.0.0-dev6"
+VERSION = "2.0.0-dev7"
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="AT Network Dashboard", version=VERSION)
@@ -86,19 +86,76 @@ async def api_test_unifi(request: Request) -> dict:
 
 @app.post("/api/settings/test/speedtest")
 async def api_test_speedtest(request: Request) -> dict:
-    """Run the configured UniFi gateway's built-in ISP/WAN speed test."""
     payload = await request.json(); client, error = _unifi_from_payload(payload)
     return error or client.run_speedtest()  # type: ignore[union-attr]
 
 
 @app.post("/api/settings/test/unifi-history")
 async def api_test_unifi_history(request: Request) -> dict:
-    """Read-only probe showing how much historical data UniFi still retains."""
     payload = await request.json(); client, error = _unifi_from_payload(payload)
     if error: return error
     try: days = int(payload.get("history_probe_days", 365))
     except (TypeError, ValueError): days = 365
     return client.history_probe(days)  # type: ignore[union-attr]
+
+
+@app.post("/api/settings/import/unifi-history")
+async def api_import_unifi_history(request: Request) -> dict:
+    payload = await request.json(); client, error = _unifi_from_payload(payload)
+    if error: return error
+    try: days = int(payload.get("history_probe_days", 365))
+    except (TypeError, ValueError): days = 365
+    history = client.retained_history(days)  # type: ignore[union-attr]
+    inserted_wan = 0
+    inserted_ap = 0
+    con = connect()
+    try:
+        for source, rows in history.items():
+            for row in rows:
+                try:
+                    epoch_ms = int(float(row.get("time")))
+                except (TypeError, ValueError):
+                    continue
+                ts = str(row.get("datetime") or "").strip()
+                if not ts:
+                    continue
+                if source == "ap_hourly":
+                    device_id = str(row.get("ap") or row.get("oid") or "").strip()
+                    if not device_id:
+                        continue
+                    cur = con.execute(
+                        """INSERT OR IGNORE INTO unifi_ap_traffic_history
+                        (ts,epoch_ms,device_id,clients,bytes,rx_bytes,tx_bytes)
+                        VALUES (?,?,?,?,?,?,?)""",
+                        (ts, epoch_ms, device_id, row.get("num_sta"), row.get("bytes"), row.get("rx_bytes"), row.get("tx_bytes")),
+                    )
+                    inserted_ap += max(cur.rowcount, 0)
+                elif source in {"gateway_hourly", "site_hourly", "site_daily"}:
+                    scope = "gateway" if source == "gateway_hourly" else "site"
+                    bucket = "daily" if source == "site_daily" else "hourly"
+                    object_id = str(row.get("gw") or row.get("site") or row.get("oid") or "").strip()
+                    if not object_id:
+                        continue
+                    cur = con.execute(
+                        """INSERT OR IGNORE INTO unifi_wan_history
+                        (ts,epoch_ms,bucket,scope,object_id,clients,rx_bytes,tx_bytes)
+                        VALUES (?,?,?,?,?,?,?,?)""",
+                        (ts, epoch_ms, bucket, scope, object_id, row.get("num_sta"), row.get("wan-rx_bytes"), row.get("wan-tx_bytes")),
+                    )
+                    inserted_wan += max(cur.rowcount, 0)
+        con.commit()
+        totals = {
+            "wan": con.execute("SELECT COUNT(*) FROM unifi_wan_history").fetchone()[0],
+            "ap": con.execute("SELECT COUNT(*) FROM unifi_ap_traffic_history").fetchone()[0],
+        }
+    finally:
+        con.close()
+    return {
+        "ok": True,
+        "message": f"Imported {inserted_wan + inserted_ap} new UniFi history records",
+        "inserted": {"wan": inserted_wan, "ap": inserted_ap},
+        "totals": totals,
+    }
 
 
 @app.post("/api/settings/test/ups")
