@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero"><div><h1>Incidents</h1><p>Network, ISP, Wi-Fi and power events recorded by AT Network Dashboard.</p></div></section>
+<section class="card dashboard-card">
+  <div class="panel-heading"><div><h2>Incident Centre</h2><p>Active incidents are shown first, followed by recent resolved events.</p></div></div>
+  <div class="table-wrap"><table class="data-table"><thead><tr><th>Status</th><th>Severity</th><th>Started</th><th>Ended</th><th>Summary</th><th>Details</th></tr></thead><tbody>
+  {% if incidents %}{% for i in incidents %}<tr><td><span class="status-pill {{ 'warn' if i.active else 'good' }}">{{ 'ACTIVE' if i.active else 'RESOLVED' }}</span></td><td>{{ i.severity|upper }}</td><td>{{ i.started_at }}</td><td>{{ i.ended_at or '—' }}</td><td><strong>{{ i.summary }}</strong></td><td>{{ i.details or '—' }}</td></tr>{% endfor %}{% else %}<tr><td colspan="6" class="muted">No incidents have been recorded yet.</td></tr>{% endif %}
+  </tbody></table></div>
+</section>
+{% endblock %}
