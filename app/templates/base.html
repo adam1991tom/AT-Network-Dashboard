@@ -14,9 +14,9 @@
     </div>
     <nav class="nav">
       <a class="{% if page == 'dashboard' %}active{% endif %}" href="/dashboard">Dashboard</a>
-      <a href="#">Incidents</a>
-      <a href="#">Wi-Fi</a>
-      <a href="#">Reports</a>
+      <a class="{% if page == 'incidents' %}active{% endif %}" href="/incidents">Incidents</a>
+      <a class="{% if page == 'wifi' %}active{% endif %}" href="/wifi">Wi-Fi</a>
+      <a class="{% if page == 'reports' %}active{% endif %}" href="/reports">Reports</a>
       <a class="{% if page == 'settings' %}active{% endif %}" href="/settings">Settings</a>
     </nav>
   </header>
