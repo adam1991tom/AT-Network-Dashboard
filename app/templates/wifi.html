@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="/static/monitoring.css">
+<section class="hero"><div><h1>Wi-Fi</h1><p>Live UniFi radio health, retries, channel utilisation and client load.</p></div></section>
+<section class="card dashboard-card">
+  <div class="panel-heading"><div><h2>Wi-Fi Optimiser</h2><p>Latest state for each access-point radio.</p></div></div>
+  <div class="wifi-radio-grid" id="wifi_page_cards"></div>
+  <div class="empty-chart" id="wifi_page_empty" style="display:flex">Loading Wi-Fi data…</div>
+</section>
+<section class="card dashboard-card">
+  <div class="panel-heading"><div><h2>Recent Wi-Fi History</h2><p>Retry percentage history from the last 24 hours.</p></div></div>
+  <div class="table-wrap"><table class="data-table"><thead><tr><th>Time</th><th>AP</th><th>Band</th><th>Channel</th><th>Width</th><th>Retries</th><th>Utilisation</th><th>Clients</th></tr></thead><tbody id="wifi_history_body"><tr><td colspan="8" class="muted">Loading…</td></tr></tbody></table></div>
+</section>
+<script>
+const esc=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+async function loadWifi(){
+  try{
+    const [live,hist]=await Promise.all([fetch('/api/monitoring/live',{cache:'no-store'}).then(r=>r.json()),fetch('/api/monitoring/wifi?hours=24',{cache:'no-store'}).then(r=>r.json())]);
+    const radios=live.wifi||[];
+    const cards=document.getElementById('wifi_page_cards');
+    const empty=document.getElementById('wifi_page_empty');
+    if(radios.length){empty.style.display='none';cards.innerHTML=radios.map(r=>{const retries=Number(r.retries||0);const state=retries>=40?'bad':retries>=30?'warn':'good';return `<article class="wifi-radio-card ${state}"><div class="wifi-card-title"><strong>${esc(r.ap_name)}</strong><span>${esc(r.band)}</span></div><div class="wifi-card-metrics"><div><span>Channel</span><strong>${esc(r.channel)}</strong></div><div><span>Width</span><strong>${esc(r.width)} MHz</strong></div><div><span>Retries</span><strong>${retries.toFixed(1)}%</strong></div><div><span>Utilisation</span><strong>${Number(r.utilization||0).toFixed(0)}%</strong></div><div><span>Clients</span><strong>${esc(r.clients)}</strong></div><div><span>TX Power</span><strong>${esc(r.tx_power)}</strong></div></div></article>`}).join('');}else{empty.textContent='No Wi-Fi radio data has been collected yet.';}
+    const body=document.getElementById('wifi_history_body');
+    body.innerHTML=hist.length?hist.slice(-250).reverse().map(r=>`<tr><td>${esc(new Date(r.ts).toLocaleString())}</td><td>${esc(r.ap_name)}</td><td>${esc(r.band)}</td><td>${esc(r.channel)}</td><td>${esc(r.width)} MHz</td><td>${Number(r.retries||0).toFixed(1)}%</td><td>${Number(r.utilization||0).toFixed(0)}%</td><td>${esc(r.clients)}</td></tr>`).join(''):'<tr><td colspan="8" class="muted">No Wi-Fi history yet.</td></tr>';
+  }catch(e){document.getElementById('wifi_page_empty').textContent='Unable to load Wi-Fi data: '+e;}
+}
+loadWifi();setInterval(loadWifi,30000);
+</script>
+{% endblock %}
