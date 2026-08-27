@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · AT Network Dashboard</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-wrap">
+      <div class="brand">AT Network Dashboard</div>
+      <div class="subtitle">Network · ISP · Wi-Fi · Power</div>
+    </div>
+    <nav class="nav">
+      <a class="{% if page == 'dashboard' %}active{% endif %}" href="/dashboard">Dashboard</a>
+      <a href="#">Incidents</a>
+      <a href="#">Wi-Fi</a>
+      <a href="#">Reports</a>
+      <a class="{% if page == 'settings' %}active{% endif %}" href="/settings">Settings</a>
+    </nav>
+  </header>
+
+  <main class="page-shell">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">AT Network Dashboard {{ version }}</footer>
+</body>
+</html>
