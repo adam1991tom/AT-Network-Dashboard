@@ -3,20 +3,45 @@
 <section class="hero">
   <div>
     <h1>Dashboard</h1>
-    <p>Clean v2 foundation. Monitoring modules from v1 will be ported here one at a time.</p>
+    <p id="dashboard_subtitle">Live health from the integrations configured in Settings.</p>
   </div>
-  <span class="status-pill good">FOUNDATION HEALTHY</span>
+  <span class="status-pill" id="overall_status">CHECKING</span>
 </section>
 
-<section class="metric-grid">
-  <article class="card metric"><span>Internet</span><strong>Waiting for integration</strong></article>
-  <article class="card metric"><span>ISP Health</span><strong>Waiting for data</strong></article>
-  <article class="card metric"><span>UPS</span><strong>Optional</strong></article>
-  <article class="card metric"><span>Wi-Fi</span><strong>Optional</strong></article>
+<section class="metric-grid dashboard-metrics">
+  <article class="card metric"><span>Internet</span><strong id="internet_state">Checking…</strong><small id="internet_detail">Ping target</small></article>
+  <article class="card metric"><span>ISP</span><strong id="isp_state">Checking…</strong><small id="isp_detail">Provider</small></article>
+  <article class="card metric"><span>UPS / Power</span><strong id="ups_state">Checking…</strong><small id="ups_detail">Integration</small></article>
+  <article class="card metric"><span>UniFi</span><strong id="unifi_state">Checking…</strong><small id="unifi_detail">Gateway</small></article>
+  <article class="card metric"><span>Wi-Fi</span><strong id="wifi_state">Checking…</strong><small id="wifi_detail">Radio monitoring</small></article>
 </section>
 
-<section class="card">
-  <h2>AT Network Dashboard v2</h2>
-  <p>This page intentionally uses one shared theme and one navigation source. No customer-specific network details are hard-coded into the UI.</p>
+<section class="dashboard-grid">
+  <article class="card dashboard-card">
+    <div class="panel-heading"><div><h2>System Overview</h2><p>Current v2 integration state. Full historical graphs will populate as collectors are ported.</p></div></div>
+    <div class="overview-list">
+      <div><span>Configuration</span><strong id="setup_state">Checking…</strong></div>
+      <div><span>Internet monitoring</span><strong id="internet_enabled">Checking…</strong></div>
+      <div><span>UniFi monitoring</span><strong id="unifi_enabled">Checking…</strong></div>
+      <div><span>UPS monitoring</span><strong id="ups_enabled">Checking…</strong></div>
+    </div>
+  </article>
+
+  <article class="card dashboard-card">
+    <div class="panel-heading"><div><h2>Quick Actions</h2><p>Configuration and diagnostics.</p></div></div>
+    <div class="quick-actions">
+      <a class="secondary-button button-link" href="/settings#integrations">Integrations</a>
+      <a class="secondary-button button-link" href="/settings#isp">ISP Monitoring</a>
+      <a class="secondary-button button-link" href="/settings#wifi">Wi-Fi Alerts</a>
+      <a class="secondary-button button-link" href="/settings#system">System</a>
+    </div>
+  </article>
 </section>
+
+<section class="card dashboard-card status-explainer">
+  <h2>Monitoring status</h2>
+  <p id="dashboard_message">Loading live status…</p>
+</section>
+
+<script src="/static/dashboard.js"></script>
 {% endblock %}
