@@ -9,9 +9,10 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.config import CONFIG
 from app.database import DB_PATH, initialise
+from app.settings_store import all_settings, set_secret, set_settings
 
 
-VERSION = "2.0.0-dev1"
+VERSION = "2.0.0-dev2"
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(
@@ -43,6 +44,30 @@ def api_health() -> dict:
         "version": VERSION,
         "environment": CONFIG.environment,
         "database": str(DB_PATH),
+    }
+
+
+@app.get("/api/settings")
+def api_settings() -> dict:
+    return all_settings()
+
+
+@app.post("/api/settings")
+async def api_save_settings(request: Request) -> dict:
+    payload = await request.json()
+    set_settings(payload)
+
+    unifi_api_key = str(payload.get("unifi_api_key", "")).strip()
+    discord_webhook = str(payload.get("discord_webhook", "")).strip()
+
+    if unifi_api_key:
+        set_secret("unifi_api_key", unifi_api_key)
+    if discord_webhook:
+        set_secret("discord_webhook", discord_webhook)
+
+    return {
+        "ok": True,
+        "settings": all_settings(),
     }
 
 
