@@ -1,0 +1,37 @@
+# Runtime secrets
+.env
+.env.*
+!.env.example
+
+# Application data
+/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated files
+/reports/
+/backups/
+*.tar.gz
+*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local credentials / setup output
+INITIAL_ADMIN_PASSWORD.txt
+*.key
+*.pem
