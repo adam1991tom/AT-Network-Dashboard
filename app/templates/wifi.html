@@ -1,12 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
-<link rel="stylesheet" href="/static/monitoring.css">
+<link rel="stylesheet" href="/static/monitoring.css?v=3.1.0">
 <section class="hero"><div><h1>Wi-Fi</h1><p>Live UniFi radio health, retries, channel utilisation and client load.</p></div></section>
 <section class="card dashboard-card">
   <div class="panel-heading"><div><h2>Wi-Fi Optimiser</h2><p>Latest state for each current access-point radio.</p></div></div>
   <div class="wifi-radio-grid" id="wifi_page_cards"></div>
   <div class="empty-chart" id="wifi_page_empty" style="display:flex">Loading Wi-Fi data…</div>
 </section>
+<div class="chart-grid-3">
+  <section class="card dashboard-card chart-card"><div class="panel-heading"><div><h2>Retries · 24 Hours</h2><p>Per AP/radio retry history.</p></div></div><div class="chart-shell"><canvas id="wifi_retries_chart"></canvas></div></section>
+  <section class="card dashboard-card chart-card"><div class="panel-heading"><div><h2>Utilisation · 24 Hours</h2><p>Channel utilisation by AP/radio.</p></div></div><div class="chart-shell"><canvas id="wifi_util_chart"></canvas></div></section>
+  <section class="card dashboard-card chart-card"><div class="panel-heading"><div><h2>Clients · 24 Hours</h2><p>Associated client count over time.</p></div></div><div class="chart-shell"><canvas id="wifi_clients_chart"></canvas></div></section>
+</div>
 <section class="card dashboard-card">
   <div class="panel-heading"><div><h2>Recent Wi-Fi History</h2><p>Filter and sort recent radio samples. Historical rows follow the current AP name after a UniFi rename.</p></div></div>
   <div class="wifi-history-tools">
