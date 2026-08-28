@@ -124,14 +124,16 @@ def run_forever() -> None:
                 )
                 print(f"auto-speedtest: started UniFi test; next in {minutes} minutes")
             else:
-                retry_at = now + timedelta(minutes=5)
+                failed_at = _iso_now()
+                failed_dt = _parse_iso(failed_at) or now
                 _set_runtime_state(
+                    speedtest_last_auto_at=failed_at,
+                    speedtest_next_auto_at=_schedule_from(failed_dt, minutes),
+                    speedtest_auto_first_due_at="",
                     speedtest_auto_state="failed",
-                    speedtest_next_auto_at=retry_at.isoformat(),
-                    speedtest_auto_first_due_at=retry_at.isoformat(),
                     speedtest_auto_last_message=result.get("message") or "Unable to start UniFi speed test",
                 )
-                print(f"auto-speedtest: start failed: {result.get('message')}")
+                print(f"auto-speedtest: start failed: {result.get('message')}; retry in {minutes} minutes")
         except Exception as exc:
             try:
                 _set_runtime_state(speedtest_auto_state="error", speedtest_auto_last_message=str(exc))
