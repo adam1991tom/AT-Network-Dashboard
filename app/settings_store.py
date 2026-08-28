@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from cryptography.fernet import Fernet, InvalidToken
 from app.config import CONFIG
-from app.database import connect
+from app.database import connect, write_transaction
 
 DEFAULT_SETTINGS: dict[str, str] = {
     "application_name":"AT Network Dashboard","application_subtitle":"Network · ISP · Wi-Fi · Power","timezone":"Europe/London","theme":"dark","accent":"green","default_range_hours":"24",
@@ -16,13 +17,19 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "maintenance_mode":"false","retention_days":"365","session_hours":"8","update_channel":"stable","auto_update_check":"true","notify_update_available":"true","setup_complete":"false",
 }
 SECRET_KEYS={"unifi_api_key","discord_webhook"}; INSTALL_KEY_PATH=Path("/data/install.key")
+_defaults_ready=False
+_defaults_lock=threading.Lock()
 
 def ensure_defaults():
-    con=connect()
-    try:
-        for k,v in DEFAULT_SETTINGS.items(): con.execute("INSERT OR IGNORE INTO settings(setting_key,setting_value) VALUES (?,?)",(k,v))
-        con.commit()
-    finally: con.close()
+    global _defaults_ready
+    if _defaults_ready:return
+    with _defaults_lock:
+        if _defaults_ready:return
+        def op(con):
+            for k,v in DEFAULT_SETTINGS.items():
+                con.execute("INSERT OR IGNORE INTO settings(setting_key,setting_value) VALUES (?,?)",(k,v))
+        write_transaction(op)
+        _defaults_ready=True
 
 def all_settings():
     ensure_defaults(); con=connect()
@@ -33,12 +40,12 @@ def all_settings():
     finally: con.close()
 
 def set_settings(values):
-    allowed=set(DEFAULT_SETTINGS); con=connect()
-    try:
+    allowed=set(DEFAULT_SETTINGS)
+    def op(con):
         for k,v in values.items():
-            if k in allowed: con.execute("INSERT INTO settings(setting_key,setting_value,updated_at) VALUES (?,?,CURRENT_TIMESTAMP) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,updated_at=CURRENT_TIMESTAMP",(k,str(v).lower() if isinstance(v,bool) else str(v)))
-        con.commit()
-    finally: con.close()
+            if k in allowed:
+                con.execute("INSERT INTO settings(setting_key,setting_value,updated_at) VALUES (?,?,CURRENT_TIMESTAMP) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,updated_at=CURRENT_TIMESTAMP WHERE settings.setting_value<>excluded.setting_value",(k,str(v).lower() if isinstance(v,bool) else str(v)))
+    write_transaction(op)
 
 def _installation_key():
     configured=(CONFIG.master_key or "").strip()
@@ -55,9 +62,10 @@ def encryption_status():
 def _cipher():return Fernet(_installation_key())
 def set_secret(key,value):
     if key not in SECRET_KEYS or not value:return
-    encrypted=_cipher().encrypt(value.encode()).decode();con=connect()
-    try:con.execute("INSERT INTO secrets(secret_key,encrypted_value,updated_at) VALUES (?,?,CURRENT_TIMESTAMP) ON CONFLICT(secret_key) DO UPDATE SET encrypted_value=excluded.encrypted_value,updated_at=CURRENT_TIMESTAMP",(key,encrypted));con.commit()
-    finally:con.close()
+    encrypted=_cipher().encrypt(value.encode()).decode()
+    def op(con):
+        con.execute("INSERT INTO secrets(secret_key,encrypted_value,updated_at) VALUES (?,?,CURRENT_TIMESTAMP) ON CONFLICT(secret_key) DO UPDATE SET encrypted_value=excluded.encrypted_value,updated_at=CURRENT_TIMESTAMP",(key,encrypted))
+    write_transaction(op)
 def get_secret(key):
     if key not in SECRET_KEYS:return None
     con=connect()
