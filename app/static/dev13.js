@@ -10,9 +10,17 @@
       const references = new Set(['Expected Download', 'Expected Upload', 'Warning', 'Major', 'Critical']);
       window.chart = function(canvasId, emptyId, series, options = {}) {
         if (canvasId === 'isp_chart') {
-          series = (series || []).map(item => references.has(item.name)
-            ? { ...item, affectsScale: true, hover: true, showPoints: false }
-            : item);
+          series = (series || []).map(item => {
+            if (!references.has(item.name)) return item;
+            const points = [...(item.points || [])];
+            if (points.length >= 2) {
+              const first = new Date(points[0].ts).getTime();
+              const last = new Date(points[points.length - 1].ts).getTime();
+              if (Number.isFinite(first)) points[0] = { ...points[0], ts: new Date(first + 60000).toISOString() };
+              if (Number.isFinite(last)) points[points.length - 1] = { ...points[points.length - 1], ts: new Date(last - 1000).toISOString() };
+            }
+            return { ...item, points, affectsScale: true, hover: true, showPoints: false };
+          });
           options = { ...options, zeroBase: false };
         }
         return originalChart(canvasId, emptyId, series, options);
