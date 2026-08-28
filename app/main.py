@@ -20,8 +20,9 @@ from app.monitoring_v23 import start_monitoring
 from app.monitoring_routes import router as monitoring_router
 from app.settings_store import all_settings, encryption_status, get_secret, set_secret, set_settings
 from app.updater import check_updates, request_update, update_state
+from app.version import APP_VERSION
 
-VERSION = "3.1.0"
+VERSION = APP_VERSION
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="AT Network Dashboard", version=VERSION)

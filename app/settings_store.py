@@ -10,7 +10,7 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "site_name":"","site_address":"",
     "isp_enabled":"true","isp_provider":"","isp_account_number":"","isp_service_reference":"","isp_support_phone":"","isp_support_url":"","isp_notes":"",
     "expected_download":"0","expected_upload":"0","warning_threshold":"0","major_threshold":"0","critical_threshold":"0","ping_target":"1.1.1.1","speedtest_auto_enabled":"true","speedtest_minutes":"15",
-    "unifi_enabled":"false","unifi_url":"","unifi_verify_ssl":"false","ups_enabled":"false","ups_type":"nutpi_http","ups_host":"","ups_port":"3493","ups_name":"","nutpi_status_path":"/api/nutpi/status.cgi","discord_enabled":"false",
+    "unifi_enabled":"false","unifi_url":"","unifi_verify_ssl":"false","ups_enabled":"false","ups_type":"nutpi_http","ups_host":"","ups_port":"3493","ups_name":"","nutpi_status_path":"/api/nutpi/status.cgi","ups_estimate_runtime_enabled":"true","ups_runtime_at_50_load_minutes":"20","ups_runtime_exponent":"1.15","discord_enabled":"false",
     "wifi_warning_threshold":"35","wifi_major_threshold":"40","wifi_critical_threshold":"50","wifi_persist_minutes":"10","wifi_recovery_threshold":"20","wifi_recovery_minutes":"10",
     "notify_internet":"true","notify_wifi":"true","notify_power":"true","notify_gateway":"true","notify_system":"true","notification_min_severity":"warning","notification_cooldown_minutes":"15",
     "maintenance_mode":"false","retention_days":"365","session_hours":"8","update_channel":"stable","auto_update_check":"true","notify_update_available":"true","setup_complete":"false",
