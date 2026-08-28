@@ -12,3 +12,20 @@ services:
       - /etc/localtime:/etc/localtime:ro
     security_opt:
       - no-new-privileges:true
+
+  at-network-updater:
+    build:
+      context: .
+      dockerfile: updater/Dockerfile
+    container_name: at-network-dashboard-updater
+    restart: unless-stopped
+    depends_on:
+      - at-network-dashboard
+    environment:
+      AT_PROJECT_DIR: ${AT_PROJECT_DIR:-/opt/AT-Network-Dashboard}
+    volumes:
+      - ./:${AT_PROJECT_DIR:-/opt/AT-Network-Dashboard}
+      - ./data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    security_opt:
+      - no-new-privileges:true

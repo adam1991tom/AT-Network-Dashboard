@@ -1,24 +1,40 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="hero"><div><h1>Reports</h1><p>Export the monitoring data collected by AT Network Dashboard.</p></div></section>
+<section class="hero"><div><h1>Reports</h1><p>Generate detailed Internet performance evidence for your ISP.</p></div></section>
 <section class="metric-grid">
-  <article class="card metric"><span>Speed Tests</span><strong>{{ counts.speedtests }}</strong><small>stored results</small></article>
-  <article class="card metric"><span>Ping Samples</span><strong>{{ counts.ping }}</strong><small>internet quality</small></article>
-  <article class="card metric"><span>Gateway Samples</span><strong>{{ counts.gateway }}</strong><small>UCG / UniFi stats</small></article>
-  <article class="card metric"><span>UPS Samples</span><strong>{{ counts.ups }}</strong><small>power history</small></article>
-  <article class="card metric"><span>Wi-Fi Samples</span><strong>{{ counts.wifi }}</strong><small>radio history</small></article>
-  <article class="card metric"><span>Imported WAN</span><strong>{{ counts.wan }}</strong><small>UniFi retained history</small></article>
+  <article class="card metric"><span>Speed Tests</span><strong>{{ counts.speedtests }}</strong><small>download / upload evidence</small></article>
+  <article class="card metric"><span>Ping Samples</span><strong>{{ counts.ping }}</strong><small>latency & packet loss</small></article>
+  <article class="card metric"><span>Gateway Samples</span><strong>{{ counts.gateway }}</strong><small>WAN status & errors</small></article>
+  <article class="card metric"><span>Internet Incidents</span><strong>{{ counts.incidents }}</strong><small>ISP / WAN fault history</small></article>
+  <article class="card metric"><span>Imported WAN</span><strong>{{ counts.wan }}</strong><small>UniFi retained Internet history</small></article>
 </section>
+
 <section class="card dashboard-card">
-  <div class="panel-heading"><div><h2>Data Exports</h2><p>Download CSV files for ISP/provider evidence or further analysis.</p></div></div>
+  <div class="panel-heading"><div><h2>Internet Performance & Reliability Report</h2><p>This report intentionally excludes Wi-Fi optimiser and UPS data. It is designed to send directly to an ISP.</p></div></div>
+  <div class="field-grid">
+    <label>Preset range<select id="report_range"><option value="24">24 hours</option><option value="168" selected>7 days</option><option value="720">30 days</option><option value="2160">90 days</option><option value="custom">Custom dates</option></select></label>
+    <label>From<input id="report_from" type="datetime-local"></label>
+    <label>To<input id="report_to" type="datetime-local"></label>
+  </div>
+  <div class="info-banner" style="margin-top:12px">The PDF includes ISP/provider and package targets, warning/major/critical thresholds, speed-test statistics, latency, packet loss, threshold breaches, Internet incidents and WAN/gateway evidence.</div>
+  <div class="test-row" style="margin-top:12px"><button type="button" class="primary-button" id="download_pdf">Generate Detailed PDF</button><button type="button" class="secondary-button" id="download_zip">Download Evidence ZIP</button><span class="test-status" id="report_status">Ready</span></div>
+</section>
+
+<section class="card dashboard-card">
+  <div class="panel-heading"><div><h2>Raw Internet Exports</h2><p>Full raw CSV exports remain available for deeper analysis.</p></div></div>
   <div class="button-grid">
     <a class="secondary-button" href="/api/reports/export/speedtests.csv">ISP Speed Tests CSV</a>
     <a class="secondary-button" href="/api/reports/export/ping.csv">Ping & Packet Loss CSV</a>
-    <a class="secondary-button" href="/api/reports/export/gateway.csv">Gateway Stats CSV</a>
-    <a class="secondary-button" href="/api/reports/export/ups.csv">UPS History CSV</a>
-    <a class="secondary-button" href="/api/reports/export/wifi.csv">Wi-Fi History CSV</a>
+    <a class="secondary-button" href="/api/reports/export/gateway.csv">Gateway WAN Stats CSV</a>
     <a class="secondary-button" href="/api/reports/export/wan.csv">UniFi WAN History CSV</a>
   </div>
 </section>
-<section class="card dashboard-card"><h2>PDF Reports</h2><p class="muted">The consolidated PDF reporting engine is the next report feature to port into v2. CSV exports above are live now and use the current v2 database.</p></section>
+<script>
+const rr=document.getElementById('report_range'),rf=document.getElementById('report_from'),rt=document.getElementById('report_to'),rs=document.getElementById('report_status');
+function localValue(d){const x=new Date(d.getTime()-d.getTimezoneOffset()*60000);return x.toISOString().slice(0,16)}
+function applyPreset(){if(rr.value==='custom')return;const h=Number(rr.value),now=new Date();rt.value=localValue(now);rf.value=localValue(new Date(now.getTime()-h*3600000))}
+function reportUrl(kind){if(rr.value!=='custom')return `/api/reports/${kind}?hours=${encodeURIComponent(rr.value)}`;if(!rf.value||!rt.value)throw new Error('Select both From and To dates');return `/api/reports/${kind}?start=${encodeURIComponent(new Date(rf.value).toISOString())}&end=${encodeURIComponent(new Date(rt.value).toISOString())}`}
+function download(kind){try{const url=reportUrl(kind);rs.textContent=kind==='isp.pdf'?'Generating PDF…':'Building evidence ZIP…';window.location.href=url;setTimeout(()=>rs.textContent='Download started ✓',900)}catch(e){rs.textContent=e.message;rs.className='test-status bad'}}
+rr.addEventListener('change',applyPreset);document.getElementById('download_pdf').onclick=()=>download('isp.pdf');document.getElementById('download_zip').onclick=()=>download('isp-evidence.zip');applyPreset();
+</script>
 {% endblock %}

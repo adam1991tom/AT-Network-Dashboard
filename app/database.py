@@ -43,8 +43,16 @@ def initialise() -> None:
         CREATE INDEX IF NOT EXISTS idx_unifi_wan_history_ts ON unifi_wan_history(ts);
         CREATE TABLE IF NOT EXISTS unifi_ap_traffic_history (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, epoch_ms INTEGER NOT NULL, device_id TEXT NOT NULL, clients INTEGER, bytes REAL, rx_bytes REAL, tx_bytes REAL, UNIQUE(epoch_ms,device_id));
         CREATE INDEX IF NOT EXISTS idx_unifi_ap_traffic_history_ts ON unifi_ap_traffic_history(ts);
+        CREATE TABLE IF NOT EXISTS admin_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+        CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES admin_users(id) ON DELETE CASCADE);
+        CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
         """)
         _ensure_column(con, "ups_history", "runtime_seconds", "REAL")
+        _ensure_column(con, "incidents", "incident_key", "TEXT")
+        _ensure_column(con, "incidents", "category", "TEXT")
+        _ensure_column(con, "incidents", "device", "TEXT")
+        _ensure_column(con, "incidents", "last_seen_at", "TEXT")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_incidents_key_active ON incidents(incident_key, active)")
         con.commit()
     finally:
         con.close()

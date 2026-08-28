@@ -7,122 +7,65 @@ const textFields = [
   "ups_type", "ups_host", "ups_port", "ups_name", "nutpi_status_path",
   "wifi_warning_threshold", "wifi_major_threshold", "wifi_critical_threshold", "wifi_persist_minutes",
   "wifi_recovery_threshold", "wifi_recovery_minutes", "notification_cooldown_minutes",
+  "session_hours", "update_channel"
 ];
-const checkboxFields = ["isp_enabled", "unifi_enabled", "ups_enabled", "discord_enabled", "notify_internet", "notify_wifi", "notify_power"];
+const checkboxFields = ["isp_enabled", "unifi_enabled", "ups_enabled", "discord_enabled", "notify_internet", "notify_wifi", "notify_power", "auto_update_check", "notify_update_available"];
 
 function boolValue(value) { return String(value).toLowerCase() === "true"; }
-function applyAccent(accent) {
-  const palette = {green:{hex:"#22c55e",rgb:"34,197,94"},blue:{hex:"#3b82f6",rgb:"59,130,246"},purple:{hex:"#a855f7",rgb:"168,85,247"},amber:{hex:"#f59e0b",rgb:"245,158,11"}};
-  const selected = palette[accent] || palette.green; const root = document.documentElement;
-  root.style.setProperty("--accent", selected.hex); root.style.setProperty("--accent-rgb", selected.rgb); root.style.setProperty("--accent-soft", `rgba(${selected.rgb},.12)`); root.style.setProperty("--accent-border", `rgba(${selected.rgb},.28)`);
-}
-function applyTheme(theme) { document.documentElement.dataset.theme = theme || "dark"; }
-function activatePanel(panelId) {
-  document.querySelectorAll(".settings-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.panel === panelId));
-  document.querySelectorAll(".settings-panel").forEach((panel) => panel.classList.toggle("active", panel.id === panelId));
-  history.replaceState(null, "", `#${panelId}`);
-}
-document.querySelectorAll(".settings-tab").forEach((tab) => tab.addEventListener("click", () => activatePanel(tab.dataset.panel)));
-
-function collectPayload(includeSecrets = true) {
-  const payload = {};
-  textFields.forEach((id) => { if ($(id)) payload[id] = $(id).value; });
-  checkboxFields.forEach((id) => { if ($(id)) payload[id] = $(id).checked ? "true" : "false"; });
-  if (includeSecrets && $("unifi_api_key")?.value.trim()) payload.unifi_api_key = $("unifi_api_key").value.trim();
-  if (includeSecrets && $("discord_webhook")?.value.trim()) payload.discord_webhook = $("discord_webhook").value.trim();
-  return payload;
-}
-
-function installExtraControls() {
-  const pingButton = $("test_ping");
-  if (pingButton && !$("test_speedtest")) {
-    const button = document.createElement("button"); button.type = "button"; button.className = "secondary-button"; button.id = "test_speedtest"; button.textContent = "Run ISP Speed Test";
-    const status = document.createElement("span"); status.className = "test-status"; status.id = "speedtest_test_status"; status.textContent = "Not tested";
-    pingButton.parentElement.append(button, status);
-    button.addEventListener("click", runSpeedTest);
-  }
-
-  const system = $("system");
-  if (system && !$("history_probe")) {
-    const block = document.createElement("div"); block.className = "integration-block"; block.style.marginTop = "18px";
-    block.innerHTML = `
-      <div class="integration-title"><div><strong>Historical Data Import</strong><span class="muted">Check and import timestamped history retained by the configured UniFi controller. Imports are safe to run more than once.</span></div></div>
-      <div class="field-grid"><label>Look back<select id="history_probe_days"><option value="90">90 Days</option><option value="180">180 Days</option><option value="365" selected>1 Year</option><option value="730">2 Years</option></select></label></div>
-      <div class="test-row"><button type="button" class="secondary-button" id="history_probe">Check UniFi History</button><button type="button" class="primary-button" id="history_import">Import UniFi History</button><span class="test-status" id="history_probe_status">Not checked</span></div>
-      <div id="history_probe_results" class="info-banner" style="display:none"></div>`;
-    system.appendChild(block);
-    $("history_probe").addEventListener("click", probeHistory);
-    $("history_import").addEventListener("click", importHistory);
-  }
-}
-
-async function loadSystemInfo() {
-  try { const response = await fetch("/api/system/info", {cache:"no-store"}); if (!response.ok) return; const data = await response.json();
-    $("system_environment").textContent = data.environment || "—"; $("system_host").textContent = data.hostname || "—"; $("system_python").textContent = data.python || "—"; $("system_database").textContent = data.database || "—"; $("security_encryption").textContent = data.encryption?.ok ? `Active ✓ · ${data.encryption.source}` : "Problem detected";
-  } catch (_) {}
-}
-
-async function loadSettings() {
-  const status = $("save_status");
-  try { const response = await fetch("/api/settings", {cache:"no-store"}); if (!response.ok) throw new Error(`HTTP ${response.status}`); const data = await response.json();
-    textFields.forEach((id) => { if ($(id) && data[id] !== undefined) $(id).value = data[id]; }); checkboxFields.forEach((id) => { if ($(id) && data[id] !== undefined) $(id).checked = boolValue(data[id]); });
-    $("unifi_key_status").textContent = data.unifi_api_key_configured ? "API key configured ✓" : "No API key stored"; $("discord_status").textContent = data.discord_webhook_configured ? "Webhook configured ✓" : "No webhook stored"; $("security_unifi").textContent = data.unifi_api_key_configured ? "Encrypted / configured ✓" : "Not configured"; $("security_discord").textContent = data.discord_webhook_configured ? "Encrypted / configured ✓" : "Not configured"; $("setup_state").textContent = boolValue(data.setup_complete) ? "Complete ✓" : "Setup required"; $("settings_health").textContent = boolValue(data.setup_complete) ? "CONFIGURED" : "SETUP REQUIRED"; $("settings_health").className = `status-pill ${boolValue(data.setup_complete) ? "good" : "warn"}`;
-    applyAccent(data.accent || "green"); applyTheme(data.theme || "dark"); status.textContent = "Settings loaded"; await loadSystemInfo();
-  } catch (error) { status.textContent = `Failed to load settings: ${error}`; }
-}
-
-async function saveSettings() {
-  const status = $("save_status"); status.textContent = "Saving…";
-  try { const response = await fetch("/api/settings", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(collectPayload(true))}); const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.detail || body.message || `HTTP ${response.status}`); if ($("unifi_api_key")) $("unifi_api_key").value = ""; if ($("discord_webhook")) $("discord_webhook").value = ""; status.textContent = "Saved ✓"; await loadSettings(); } catch (error) { status.textContent = `Save failed: ${error}`; }
-}
-
-async function runTest(kind, statusId) {
-  const status = $(statusId); status.textContent = "Testing…"; status.className = "test-status testing";
-  try { const response = await fetch(`/api/settings/test/${kind}`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(collectPayload(true))}); const result = await response.json(); let extra = "";
-    if (kind === "ups" && result.ok) { const bits=[]; if(result.status)bits.push(result.status); if(result.load!==undefined&&result.load!==null)bits.push(`Load ${result.load}%`); if(result.input_voltage)bits.push(`Input ${result.input_voltage} V`); extra=bits.length?` · ${bits.join(" · ")}`:""; } else if (result.status) extra=` · ${result.status}`;
-    status.textContent = result.ok ? `Connected ✓${extra}` : `Failed · ${result.message || "Connection test failed"}`; status.className = `test-status ${result.ok ? "good" : "bad"}`; status.title = result.output || result.message || "";
-  } catch (error) { status.textContent=`Error · ${error}`; status.className="test-status bad"; }
-}
-
-async function runSpeedTest() {
-  const status=$("speedtest_test_status"); status.textContent="Starting gateway speed test…"; status.className="test-status testing";
-  try { const response=await fetch("/api/settings/test/speedtest",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(collectPayload(true))}); const result=await response.json(); status.textContent=result.ok?"Started ✓ · Results will appear on the Dashboard when UniFi completes the test":`Failed · ${result.message || "Could not start test"}`; status.className=`test-status ${result.ok?"good":"bad"}`; } catch(error){status.textContent=`Error · ${error}`;status.className="test-status bad";}
-}
-
-function renderHistoryResults(data, importedText = "") {
-  const results=$("history_probe_results");
-  const sources=Object.entries(data.sources||{}).map(([name,s])=>`<div><strong>${escapeHtml(name)}</strong>: ${s.records||0} records${s.oldest?` · ${escapeHtml(s.oldest)} → ${escapeHtml(s.newest)}`:""}${s.error?` · ${escapeHtml(s.error)}`:""}</div>`).join("");
-  results.innerHTML=`<strong>UniFi retained history</strong><div style="margin-top:8px">Overall: ${escapeHtml(data.oldest||"—")} → ${escapeHtml(data.newest||"—")}</div>${sources}${importedText?`<div style="margin-top:10px"><strong>${escapeHtml(importedText)}</strong></div>`:""}`;
-  results.style.display="block";
-}
-
-async function probeHistory() {
-  const status=$("history_probe_status"), results=$("history_probe_results"); status.textContent="Checking retained UniFi history…"; status.className="test-status testing"; results.style.display="none";
-  const payload=collectPayload(true); payload.history_probe_days=$("history_probe_days").value;
-  try { const response=await fetch("/api/settings/test/unifi-history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)}); const data=await response.json(); status.textContent=data.ok?`Found history ✓ · ${data.total_records} records`:`No history found · ${data.message || "Probe failed"}`; status.className=`test-status ${data.ok?"good":"bad"}`; renderHistoryResults(data);
-  } catch(error){status.textContent=`Error · ${error}`;status.className="test-status bad";}
-}
-
-async function importHistory() {
-  const status=$("history_probe_status");
-  status.textContent="Importing retained UniFi history…"; status.className="test-status testing";
-  const payload=collectPayload(true); payload.history_probe_days=$("history_probe_days").value;
-  try {
-    const response=await fetch("/api/settings/import/unifi-history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-    const data=await response.json();
-    if(!response.ok||!data.ok) throw new Error(data.message||`HTTP ${response.status}`);
-    status.textContent=`Imported ✓ · ${data.inserted.wan + data.inserted.ap} new records`;
-    status.className="test-status good";
-    const probeResponse=await fetch("/api/settings/test/unifi-history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-    const probe=await probeResponse.json();
-    renderHistoryResults(probe, `Database totals: ${data.totals.wan} WAN · ${data.totals.ap} AP records`);
-  } catch(error){status.textContent=`Import failed · ${error}`;status.className="test-status bad";}
-}
-
-async function loadChanges() { if(!$("changes_body"))return; try{const response=await fetch("/api/network-changes",{cache:"no-store"});const data=await response.json();$("changes_body").innerHTML=data.items?.length?data.items.map((item)=>`<tr><td>${escapeHtml(item.ts)}</td><td>${escapeHtml(item.category)}</td><td><strong>${escapeHtml(item.summary)}</strong>${item.details?`<small>${escapeHtml(item.details)}</small>`:""}</td></tr>`).join(""):'<tr><td colspan="3" class="muted">No network changes recorded yet.</td></tr>';}catch(_){$("changes_body").innerHTML='<tr><td colspan="3" class="bad-text">Unable to load changes.</td></tr>';}}
 function escapeHtml(value){return String(value??"").replace(/[&<>'"]/g,(char)=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));}
-async function recordChange(){const status=$("change_status");const payload={category:$("change_category").value,summary:$("change_summary").value.trim(),details:$("change_details").value.trim()};status.textContent="Recording…";try{const response=await fetch("/api/network-changes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});const result=await response.json();if(!response.ok||!result.ok)throw new Error(result.message||`HTTP ${response.status}`);$("change_summary").value="";$("change_details").value="";status.textContent="Recorded ✓";status.className="test-status good";await loadChanges();}catch(error){status.textContent=`Failed · ${error}`;status.className="test-status bad";}}
+function applyAccent(accent) { const palette={green:{hex:"#22c55e",rgb:"34,197,94"},blue:{hex:"#3b82f6",rgb:"59,130,246"},purple:{hex:"#a855f7",rgb:"168,85,247"},amber:{hex:"#f59e0b",rgb:"245,158,11"}};const selected=palette[accent]||palette.green,root=document.documentElement;root.style.setProperty("--accent",selected.hex);root.style.setProperty("--accent-rgb",selected.rgb);root.style.setProperty("--accent-soft",`rgba(${selected.rgb},.12)`);root.style.setProperty("--accent-border",`rgba(${selected.rgb},.28)`); }
+function applyTheme(theme) { document.documentElement.dataset.theme = theme || "dark"; }
+function activatePanel(panelId){document.querySelectorAll(".settings-tab").forEach(tab=>tab.classList.toggle("active",tab.dataset.panel===panelId));document.querySelectorAll(".settings-panel").forEach(panel=>panel.classList.toggle("active",panel.id===panelId));history.replaceState(null,"",`#${panelId}`);}
+document.querySelectorAll(".settings-tab").forEach(tab=>tab.addEventListener("click",()=>activatePanel(tab.dataset.panel)));
+
+function collectPayload(includeSecrets=true){const payload={};textFields.forEach(id=>{if($(id))payload[id]=$(id).value});checkboxFields.forEach(id=>{if($(id))payload[id]=$(id).checked?"true":"false"});if(includeSecrets&&$("unifi_api_key")?.value.trim())payload.unifi_api_key=$("unifi_api_key").value.trim();if(includeSecrets&&$("discord_webhook")?.value.trim())payload.discord_webhook=$("discord_webhook").value.trim();return payload;}
+
+function installExtraControls(){
+  const pingButton=$("test_ping");
+  if(pingButton&&!$("test_speedtest")){const button=document.createElement("button");button.type="button";button.className="secondary-button";button.id="test_speedtest";button.textContent="Run ISP Speed Test";const status=document.createElement("span");status.className="test-status";status.id="speedtest_test_status";status.textContent="Not tested";pingButton.parentElement.append(button,status);button.addEventListener("click",runSpeedTest);}
+
+  const security=$("security");
+  if(security&&!$("change_password")){
+    const tile=security.querySelector('.security-grid .info-tile:nth-child(4) strong');if(tile)tile.textContent='Enabled ✓';
+    const warning=security.querySelector('.warning-banner');if(warning){warning.className='info-banner';warning.textContent='Administrator login protects dashboard pages and API routes. Sessions expire automatically.';}
+    const block=document.createElement('div');block.className='integration-block';block.style.marginTop='18px';block.innerHTML=`<div class="integration-title"><div><strong>Administrator Security</strong><span class="muted">Change the administrator password and session timeout.</span></div></div><div class="field-grid"><label>Session timeout hours<input id="session_hours" type="number" min="1" max="168" value="8"></label><label>Current password<input id="current_password" type="password" autocomplete="current-password"></label><label>New password<input id="new_password" type="password" autocomplete="new-password" placeholder="At least 10 characters"></label><label>Confirm new password<input id="confirm_password" type="password" autocomplete="new-password"></label></div><div class="test-row"><button type="button" class="secondary-button" id="change_password">Change Password</button><span class="test-status" id="password_status">Ready</span></div>`;security.appendChild(block);$("change_password").addEventListener('click',changePassword);
+  }
+
+  const system=$("system");
+  if(system&&!$("history_probe")){
+    const block=document.createElement("div");block.className="integration-block";block.style.marginTop="18px";block.innerHTML=`<div class="integration-title"><div><strong>Historical Data Import</strong><span class="muted">Check and import timestamped history retained by the configured UniFi controller. Imports are safe to run more than once.</span></div></div><div class="field-grid"><label>Look back<select id="history_probe_days"><option value="90">90 Days</option><option value="180">180 Days</option><option value="365" selected>1 Year</option><option value="730">2 Years</option></select></label></div><div class="test-row"><button type="button" class="secondary-button" id="history_probe">Check UniFi History</button><button type="button" class="primary-button" id="history_import">Import UniFi History</button><span class="test-status" id="history_probe_status">Not checked</span></div><div id="history_probe_results" class="info-banner" style="display:none"></div>`;system.appendChild(block);$("history_probe").addEventListener("click",probeHistory);$("history_import").addEventListener("click",importHistory);
+  }
+  if(system&&!$("update_check")){
+    const update=document.createElement('div');update.className='integration-block';update.style.marginTop='18px';update.innerHTML=`<div class="integration-title"><div><strong>Application Updates</strong><span class="muted">Choose Stable or Beta, check GitHub, then update from this page with live feedback.</span></div></div><div class="field-grid"><label>Update channel<select id="update_channel"><option value="stable">Stable</option><option value="beta">Beta</option></select></label><label class="switch-line">Automatic update checks <input id="auto_update_check" type="checkbox"></label><label class="switch-line">Notify when update is available <input id="notify_update_available" type="checkbox"></label></div><div class="info-grid system-grid" style="margin-top:12px"><div class="info-tile"><span>Installed</span><strong id="update_installed">—</strong></div><div class="info-tile"><span>Latest</span><strong id="update_latest">Not checked</strong></div><div class="info-tile"><span>Status</span><strong id="update_state">Idle</strong></div></div><div class="test-row"><button type="button" class="secondary-button" id="update_check">Check for Updates</button><button type="button" class="primary-button" id="update_apply" disabled>Install Update</button><span class="test-status" id="update_status">Not checked</span></div><div id="update_notes" class="info-banner" style="display:none;white-space:pre-wrap"></div>`;system.appendChild(update);$("update_check").addEventListener('click',checkUpdate);$("update_apply").addEventListener('click',applyUpdate);
+  }
+}
+
+async function api(url,opt={}){const response=await fetch(url,{cache:'no-store',...opt});if(response.status===401){location.href='/login';throw new Error('Authentication required')}const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.detail||data.message||`HTTP ${response.status}`);return data;}
+
+async function loadSystemInfo(){try{const data=await api("/api/system/info");$("system_environment").textContent=data.environment||"—";$("system_host").textContent=data.hostname||"—";$("system_python").textContent=data.python||"—";$("system_database").textContent=data.database||"—";$("security_encryption").textContent=data.encryption?.ok?`Active ✓ · ${data.encryption.source}`:"Problem detected";if($("update_installed"))$("update_installed").textContent=data.version||"—";}catch(_){} }
+
+async function loadSettings(){const status=$("save_status");try{const data=await api("/api/settings");textFields.forEach(id=>{if($(id)&&data[id]!==undefined)$(id).value=data[id]});checkboxFields.forEach(id=>{if($(id)&&data[id]!==undefined)$(id).checked=boolValue(data[id])});$("unifi_key_status").textContent=data.unifi_api_key_configured?"API key configured ✓":"No API key stored";$("discord_status").textContent=data.discord_webhook_configured?"Webhook configured ✓":"No webhook stored";$("security_unifi").textContent=data.unifi_api_key_configured?"Encrypted / configured ✓":"Not configured";$("security_discord").textContent=data.discord_webhook_configured?"Encrypted / configured ✓":"Not configured";$("setup_state").textContent=boolValue(data.setup_complete)?"Complete ✓":"Setup required";$("settings_health").textContent=boolValue(data.setup_complete)?"CONFIGURED":"SETUP REQUIRED";$("settings_health").className=`status-pill ${boolValue(data.setup_complete)?"good":"warn"}`;applyAccent(data.accent||"green");applyTheme(data.theme||"dark");status.textContent="Settings loaded";await loadSystemInfo();if(boolValue(data.auto_update_check))setTimeout(checkUpdate,500);}catch(error){status.textContent=`Failed to load settings: ${error}`;}}
+
+async function saveSettings(){const status=$("save_status");status.textContent="Saving…";try{await api("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(collectPayload(true))});if($("unifi_api_key"))$("unifi_api_key").value="";if($("discord_webhook"))$("discord_webhook").value="";status.textContent="Saved ✓";await loadSettings();}catch(error){status.textContent=`Save failed: ${error}`;}}
+
+async function runTest(kind,statusId){const status=$(statusId);status.textContent="Testing…";status.className="test-status testing";try{const result=await api(`/api/settings/test/${kind}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(collectPayload(true))});let extra="";if(kind==="ups"&&result.ok){const bits=[];if(result.status)bits.push(result.status);if(result.load!==undefined&&result.load!==null)bits.push(`Load ${result.load}%`);if(result.input_voltage)bits.push(`Input ${result.input_voltage} V`);extra=bits.length?` · ${bits.join(" · ")}`:"";}else if(result.status)extra=` · ${result.status}`;status.textContent=result.ok?`Connected ✓${extra}`:`Failed · ${result.message||"Connection test failed"}`;status.className=`test-status ${result.ok?"good":"bad"}`;}catch(error){status.textContent=`Error · ${error}`;status.className="test-status bad";}}
+
+async function runSpeedTest(){const status=$("speedtest_test_status");status.textContent="Starting gateway speed test…";status.className="test-status testing";try{const result=await api("/api/settings/test/speedtest",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(collectPayload(true))});status.textContent=result.ok?"Started ✓ · Results will appear on the Dashboard when UniFi completes the test":`Failed · ${result.message||"Could not start test"}`;status.className=`test-status ${result.ok?"good":"bad"}`;}catch(error){status.textContent=`Error · ${error}`;status.className="test-status bad";}}
+
+function renderHistoryResults(data,importedText=""){const results=$("history_probe_results");const sources=Object.entries(data.sources||{}).map(([name,s])=>`<div><strong>${escapeHtml(name)}</strong>: ${s.records||0} records${s.oldest?` · ${escapeHtml(s.oldest)} → ${escapeHtml(s.newest)}`:""}</div>`).join("");results.innerHTML=`<strong>UniFi retained history</strong><div style="margin-top:8px">Overall: ${escapeHtml(data.oldest||"—")} → ${escapeHtml(data.newest||"—")}</div>${sources}${importedText?`<div style="margin-top:10px"><strong>${escapeHtml(importedText)}</strong></div>`:""}`;results.style.display="block";}
+async function probeHistory(){const status=$("history_probe_status"),results=$("history_probe_results");status.textContent="Checking retained UniFi history…";status.className="test-status testing";results.style.display="none";const payload=collectPayload(true);payload.history_probe_days=$("history_probe_days").value;try{const data=await api("/api/settings/test/unifi-history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});status.textContent=data.ok?`Found history ✓ · ${data.total_records} records`:`No history found · ${data.message||"Probe failed"}`;status.className=`test-status ${data.ok?"good":"bad"}`;renderHistoryResults(data);}catch(error){status.textContent=`Error · ${error}`;status.className="test-status bad";}}
+async function importHistory(){const status=$("history_probe_status");status.textContent="Importing retained UniFi history…";status.className="test-status testing";const payload=collectPayload(true);payload.history_probe_days=$("history_probe_days").value;try{const data=await api("/api/settings/import/unifi-history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});status.textContent=`Imported ✓ · ${data.inserted.wan+data.inserted.ap} new records`;status.className="test-status good";const probe=await api("/api/settings/test/unifi-history",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});renderHistoryResults(probe,`Database totals: ${data.totals.wan} WAN · ${data.totals.ap} AP records`);}catch(error){status.textContent=`Import failed · ${error}`;status.className="test-status bad";}}
+
+async function changePassword(){const status=$("password_status");if($("new_password").value!==$("confirm_password").value){status.textContent='New passwords do not match';status.className='test-status bad';return}status.textContent='Changing…';status.className='test-status testing';try{const data=await api('/api/security/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current_password:$("current_password").value,new_password:$("new_password").value})});status.textContent=data.message+' · Sign in again';status.className='test-status good';setTimeout(()=>location.href='/login',1200)}catch(e){status.textContent=e.message;status.className='test-status bad'}}
+
+let updateTarget='';
+async function checkUpdate(){if(!$("update_channel"))return;const status=$("update_status"),channel=$("update_channel").value;status.textContent='Checking GitHub…';status.className='test-status testing';try{const data=await api(`/api/system/update/check?channel=${encodeURIComponent(channel)}`);$("update_installed").textContent=data.current||'—';$("update_latest").textContent=data.latest||'No release';updateTarget=data.target||data.latest||'';$("update_apply").disabled=!data.available;status.textContent=data.available?'Update available ✓':(data.message||'Up to date');status.className=`test-status ${data.available?'good':''}`;const notes=$("update_notes");if(data.notes){notes.textContent=data.notes;notes.style.display='block'}else notes.style.display='none';await pollUpdateState();}catch(e){status.textContent=`Check failed · ${e.message}`;status.className='test-status bad'}}
+async function applyUpdate(){const status=$("update_status"),channel=$("update_channel").value;status.textContent='Queueing update…';status.className='test-status testing';try{const data=await api('/api/system/update/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({channel,target:updateTarget})});status.textContent=data.message;$("update_apply").disabled=true;pollUpdateState(true);}catch(e){status.textContent=`Update failed · ${e.message}`;status.className='test-status bad'}}
+async function pollUpdateState(repeat=false){if(!$("update_state"))return;try{const data=await api('/api/system/update/state');$("update_state").textContent=String(data.status||'idle').toUpperCase();if(data.message)$("update_status").textContent=data.message;if(repeat&&['queued','fetching','building','restarting'].includes(String(data.status||'')))setTimeout(()=>pollUpdateState(true),2000);}catch(e){if(repeat)setTimeout(()=>pollUpdateState(true),3000)}}
+
+async function loadChanges(){if(!$("changes_body"))return;try{const data=await api("/api/network-changes");$("changes_body").innerHTML=data.items?.length?data.items.map(item=>`<tr><td>${escapeHtml(item.ts)}</td><td>${escapeHtml(item.category)}</td><td><strong>${escapeHtml(item.summary)}</strong>${item.details?`<small>${escapeHtml(item.details)}</small>`:""}</td></tr>`).join(""):'<tr><td colspan="3" class="muted">No network changes recorded yet.</td></tr>';}catch(_){$("changes_body").innerHTML='<tr><td colspan="3" class="bad-text">Unable to load changes.</td></tr>';}}
+async function recordChange(){const status=$("change_status"),payload={category:$("change_category").value,summary:$("change_summary").value.trim(),details:$("change_details").value.trim()};status.textContent="Recording…";try{await api("/api/network-changes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});$("change_summary").value="";$("change_details").value="";status.textContent="Recorded ✓";status.className="test-status good";await loadChanges();}catch(error){status.textContent=`Failed · ${error}`;status.className="test-status bad";}}
 
 installExtraControls();
-$("save_settings")?.addEventListener("click",saveSettings); $("test_unifi")?.addEventListener("click",()=>runTest("unifi","unifi_test_status")); $("test_ups")?.addEventListener("click",()=>runTest("ups","ups_test_status")); $("test_discord")?.addEventListener("click",()=>runTest("discord","discord_test_status")); $("test_ping")?.addEventListener("click",()=>runTest("ping","ping_test_status")); $("record_change")?.addEventListener("click",recordChange); $("accent")?.addEventListener("change",()=>applyAccent($("accent").value)); $("theme")?.addEventListener("change",()=>applyTheme($("theme").value));
-const requestedPanel=location.hash.replace("#",""); if(requestedPanel&&document.getElementById(requestedPanel))activatePanel(requestedPanel); loadSettings(); loadChanges();
+$("save_settings")?.addEventListener("click",saveSettings);$("test_unifi")?.addEventListener("click",()=>runTest("unifi","unifi_test_status"));$("test_ups")?.addEventListener("click",()=>runTest("ups","ups_test_status"));$("test_discord")?.addEventListener("click",()=>runTest("discord","discord_test_status"));$("test_ping")?.addEventListener("click",()=>runTest("ping","ping_test_status"));$("record_change")?.addEventListener("click",recordChange);$("accent")?.addEventListener("change",()=>applyAccent($("accent").value));$("theme")?.addEventListener("change",()=>applyTheme($("theme").value));
+const requestedPanel=location.hash.replace("#","");if(requestedPanel&&document.getElementById(requestedPanel))activatePanel(requestedPanel);loadSettings();loadChanges();pollUpdateState();
