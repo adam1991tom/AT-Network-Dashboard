@@ -7,10 +7,12 @@ from app.config import CONFIG
 from app.database import DB_PATH,connect
 from app.settings_store import all_settings,encryption_status
 from app.system_tools import status,apply_retention,backup_bytes
+from app.v3_routes import router as v3_router
+from app.speedtest_audit_routes import router as audit_router
 
-router=APIRouter(tags=['system-tools']);VERSION='2.3.0'
+router=APIRouter(tags=['system-tools']);router.include_router(v3_router);router.include_router(audit_router);VERSION='3.0.0'
 @router.get('/api/system/info')
-def system_info():return {'version':VERSION,'environment':CONFIG.environment,'database':str(DB_PATH),'database_exists':DB_PATH.exists(),'python':platform.python_version(),'platform':platform.system(),'hostname':platform.node(),'encryption':encryption_status(),'authentication':True,'schema':'2.3'}
+def system_info():return {'version':VERSION,'environment':CONFIG.environment,'database':str(DB_PATH),'database_exists':DB_PATH.exists(),'python':platform.python_version(),'platform':platform.system(),'hostname':platform.node(),'encryption':encryption_status(),'authentication':True,'schema':'3.0'}
 @router.get('/api/system/monitoring-status')
 def monitoring_status():return status()
 @router.post('/api/system/retention/apply')
@@ -60,4 +62,4 @@ async def incident_note(incident_id:int,request:Request):
  return {'ok':True}
 @router.get('/api/system/build-info')
 def build_info():
- cfg=all_settings();return {'version':VERSION,'schema':'2.3','update_channel':cfg.get('update_channel','stable'),'theme':cfg.get('theme','dark'),'accent':cfg.get('accent','green')}
+ cfg=all_settings();return {'version':VERSION,'schema':'3.0','update_channel':cfg.get('update_channel','stable'),'theme':cfg.get('theme','dark'),'accent':cfg.get('accent','green')}
