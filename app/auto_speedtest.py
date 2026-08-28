@@ -1,147 +1,66 @@
 from __future__ import annotations
-
 import time
-from datetime import datetime, timedelta, timezone
-
+from datetime import datetime,timedelta,timezone
 from app.database import connect
 from app.integrations.unifi import UniFiClient
-from app.settings_store import all_settings, get_secret
+from app.settings_store import all_settings,get_secret
 
-POLL_SECONDS = 15
-MIN_INTERVAL_MINUTES = 5
-MAX_INTERVAL_MINUTES = 1440
+POLL_SECONDS=15;MIN_INTERVAL_MINUTES=5;MAX_INTERVAL_MINUTES=1440
 
+def _bool(v,default=False):return default if v is None else str(v).lower() in {'1','true','yes','on'}
+def _interval(cfg):
+ try:m=int(float(cfg.get('speedtest_minutes') or 15))
+ except Exception:m=15
+ return max(MIN_INTERVAL_MINUTES,min(MAX_INTERVAL_MINUTES,m))
+def _now():return datetime.now(timezone.utc)
+def _parse(v):
+ if not v:return None
+ try:return datetime.fromisoformat(str(v).replace('Z','+00:00')).astimezone(timezone.utc)
+ except Exception:return None
 
-def _bool(value: object, default: bool = False) -> bool:
-    if value is None:
-        return default
-    return str(value).lower() in {"1", "true", "yes", "on"}
+def _ensure_audit():
+ con=connect()
+ try:
+  con.execute('CREATE TABLE IF NOT EXISTS speedtest_schedule_audit(id INTEGER PRIMARY KEY AUTOINCREMENT,due_at TEXT NOT NULL,attempted_at TEXT NOT NULL,status TEXT NOT NULL,message TEXT NOT NULL DEFAULT \'\',interval_minutes INTEGER NOT NULL)')
+  con.execute('CREATE INDEX IF NOT EXISTS idx_speedtest_schedule_due ON speedtest_schedule_audit(due_at)');con.commit()
+ finally:con.close()
+def _audit(due,attempt,status,message,minutes):
+ con=connect()
+ try:con.execute('INSERT INTO speedtest_schedule_audit(due_at,attempted_at,status,message,interval_minutes) VALUES (?,?,?,?,?)',(due.isoformat(),attempt.isoformat(),status,str(message or ''),minutes));con.commit()
+ finally:con.close()
+def _state(**values):
+ con=connect()
+ try:
+  for k,v in values.items():con.execute('INSERT INTO settings(setting_key,setting_value,updated_at) VALUES (?,?,CURRENT_TIMESTAMP) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,updated_at=CURRENT_TIMESTAMP',(k,'' if v is None else str(v)))
+  con.commit()
+ finally:con.close()
+def _advance(due,now,minutes):
+ step=timedelta(minutes=minutes);nxt=due+step
+ while nxt<=now:nxt+=step
+ return nxt
 
+def run_forever():
+ print('auto-speedtest: v3 worker started');_ensure_audit()
+ while True:
+  try:
+   cfg=all_settings();enabled=_bool(cfg.get('speedtest_auto_enabled'),True);minutes=_interval(cfg);now=_now()
+   if not enabled:_state(speedtest_auto_state='disabled',speedtest_next_auto_at='');time.sleep(POLL_SECONDS);continue
+   if not _bool(cfg.get('isp_enabled'),True) or not _bool(cfg.get('unifi_enabled'),False):_state(speedtest_auto_state='waiting for ISP/UniFi to be enabled',speedtest_next_auto_at='');time.sleep(POLL_SECONDS);continue
+   url=str(cfg.get('unifi_url') or '').strip();key=get_secret('unifi_api_key') or ''
+   if not url or not key:_state(speedtest_auto_state='waiting for UniFi configuration',speedtest_next_auto_at='');time.sleep(POLL_SECONDS);continue
+   due=_parse(cfg.get('speedtest_next_auto_at'))
+   if due is None:
+    due=now+timedelta(seconds=45);_state(speedtest_auto_state='scheduled',speedtest_next_auto_at=due.isoformat());time.sleep(POLL_SECONDS);continue
+   if now<due:_state(speedtest_auto_state='scheduled',speedtest_next_auto_at=due.isoformat());time.sleep(POLL_SECONDS);continue
+   attempt=_now();_state(speedtest_auto_state='starting')
+   result=UniFiClient(url,key,str(cfg.get('unifi_verify_ssl') or 'false').lower()=='true').run_speedtest();ok=bool(result.get('ok'));message=result.get('message') or ('UniFi speed test started' if ok else 'Unable to start UniFi speed test')
+   _audit(due,attempt,'accepted' if ok else 'failed',message,minutes);nxt=_advance(due,attempt,minutes)
+   _state(speedtest_last_auto_at=attempt.isoformat(),speedtest_next_auto_at=nxt.isoformat(),speedtest_auto_state='started successfully' if ok else 'failed',speedtest_auto_last_message=message)
+   print(f"auto-speedtest: {'accepted' if ok else 'failed'} due={due.isoformat()} attempted={attempt.isoformat()} next={nxt.isoformat()}")
+  except Exception as exc:
+   try:_state(speedtest_auto_state='error',speedtest_auto_last_message=str(exc))
+   except Exception:pass
+   print(f'auto-speedtest: worker error: {exc}')
+  time.sleep(POLL_SECONDS)
 
-def _interval_minutes(cfg: dict) -> int:
-    try:
-        minutes = int(float(cfg.get("speedtest_minutes") or 15))
-    except (TypeError, ValueError):
-        minutes = 15
-    return max(MIN_INTERVAL_MINUTES, min(MAX_INTERVAL_MINUTES, minutes))
-
-
-def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _parse_iso(value: object) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
-    except Exception:
-        return None
-
-
-def _set_runtime_state(**values: object) -> None:
-    con = connect()
-    try:
-        for key, value in values.items():
-            con.execute(
-                """INSERT INTO settings(setting_key, setting_value, updated_at)
-                   VALUES (?, ?, CURRENT_TIMESTAMP)
-                   ON CONFLICT(setting_key) DO UPDATE SET
-                     setting_value=excluded.setting_value,
-                     updated_at=CURRENT_TIMESTAMP""",
-                (key, "" if value is None else str(value)),
-            )
-        con.commit()
-    finally:
-        con.close()
-
-
-def _schedule_from(now: datetime, minutes: int) -> str:
-    return (now + timedelta(minutes=minutes)).isoformat()
-
-
-def run_forever() -> None:
-    print("auto-speedtest: worker started")
-    while True:
-        try:
-            cfg = all_settings()
-            enabled = _bool(cfg.get("speedtest_auto_enabled"), True)
-            isp_enabled = _bool(cfg.get("isp_enabled"), True)
-            unifi_enabled = _bool(cfg.get("unifi_enabled"), False)
-            minutes = _interval_minutes(cfg)
-            now = datetime.now(timezone.utc)
-
-            if not enabled:
-                _set_runtime_state(speedtest_auto_state="disabled", speedtest_next_auto_at="", speedtest_auto_first_due_at="")
-                time.sleep(POLL_SECONDS)
-                continue
-
-            if not isp_enabled or not unifi_enabled:
-                _set_runtime_state(speedtest_auto_state="waiting for ISP/UniFi to be enabled", speedtest_next_auto_at="", speedtest_auto_first_due_at="")
-                time.sleep(POLL_SECONDS)
-                continue
-
-            url = str(cfg.get("unifi_url") or "").strip()
-            api_key = get_secret("unifi_api_key") or ""
-            if not url or not api_key:
-                _set_runtime_state(speedtest_auto_state="waiting for UniFi configuration", speedtest_next_auto_at="", speedtest_auto_first_due_at="")
-                time.sleep(POLL_SECONDS)
-                continue
-
-            last_started = _parse_iso(cfg.get("speedtest_last_auto_at"))
-            if last_started is None:
-                first_due = _parse_iso(cfg.get("speedtest_auto_first_due_at"))
-                if first_due is None:
-                    first_due = now + timedelta(seconds=45)
-                    _set_runtime_state(
-                        speedtest_auto_state="scheduled",
-                        speedtest_auto_first_due_at=first_due.isoformat(),
-                        speedtest_next_auto_at=first_due.isoformat(),
-                    )
-                    time.sleep(POLL_SECONDS)
-                    continue
-                next_due = first_due
-            else:
-                next_due = last_started + timedelta(minutes=minutes)
-
-            if now < next_due:
-                _set_runtime_state(speedtest_auto_state="scheduled", speedtest_next_auto_at=next_due.isoformat())
-                time.sleep(POLL_SECONDS)
-                continue
-
-            _set_runtime_state(speedtest_auto_state="starting", speedtest_next_auto_at="")
-            client = UniFiClient(url, api_key, str(cfg.get("unifi_verify_ssl") or "false").lower() == "true")
-            result = client.run_speedtest()
-            if result.get("ok"):
-                started_at = _iso_now()
-                started_dt = _parse_iso(started_at) or now
-                _set_runtime_state(
-                    speedtest_last_auto_at=started_at,
-                    speedtest_next_auto_at=_schedule_from(started_dt, minutes),
-                    speedtest_auto_first_due_at="",
-                    speedtest_auto_state="started successfully",
-                    speedtest_auto_last_message=result.get("message") or "UniFi speed test started",
-                )
-                print(f"auto-speedtest: started UniFi test; next in {minutes} minutes")
-            else:
-                failed_at = _iso_now()
-                failed_dt = _parse_iso(failed_at) or now
-                _set_runtime_state(
-                    speedtest_last_auto_at=failed_at,
-                    speedtest_next_auto_at=_schedule_from(failed_dt, minutes),
-                    speedtest_auto_first_due_at="",
-                    speedtest_auto_state="failed",
-                    speedtest_auto_last_message=result.get("message") or "Unable to start UniFi speed test",
-                )
-                print(f"auto-speedtest: start failed: {result.get('message')}; retry in {minutes} minutes")
-        except Exception as exc:
-            try:
-                _set_runtime_state(speedtest_auto_state="error", speedtest_auto_last_message=str(exc))
-            except Exception:
-                pass
-            print(f"auto-speedtest: worker error: {exc}")
-        time.sleep(POLL_SECONDS)
-
-
-if __name__ == "__main__":
-    run_forever()
+if __name__=='__main__':run_forever()
