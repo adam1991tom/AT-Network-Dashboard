@@ -13,7 +13,7 @@
 
 <section class="card dashboard-card monitoring-card isp-combined-card">
   <div class="panel-heading range-heading">
-    <div><h2>ISP Speed Test & Internet Quality</h2><p>UniFi download/upload test history with continuous latency and packet-loss tracking on the same timeline.</p></div>
+    <div><h2>ISP Speed Test & Internet Quality</h2><p>UniFi download/upload test history with continuous latency and packet-loss tracking on the same timeline. Configured expected speeds and warning/major/critical thresholds are shown as toggleable reference lines.</p></div>
     <div class="panel-actions"><button class="secondary-button compact-action" id="run_speedtest_button" type="button">Run Speed Test</button><span class="test-status" id="run_speedtest_status"></span><div class="range-buttons" data-range-group><button class="range-button active" data-hours="24">24h</button><button class="range-button" data-hours="168">7d</button><button class="range-button" data-hours="720">30d</button><button class="range-button" data-hours="2160">90d</button></div></div>
   </div>
   <div class="chart-legend interactive-legend" id="isp_legend"></div>
@@ -26,4 +26,5 @@
 <section class="card dashboard-card monitoring-card ups-panel"><div class="panel-heading"><div><h2>UPS / Power</h2><p>Live mains, battery and load information from NUTPI, with all available readings plotted below.</p></div></div><div class="ups-live-grid"><div><span>Input Voltage</span><strong id="ups_input">—</strong></div><div><span>Output Voltage</span><strong id="ups_output">—</strong></div><div><span>Battery Voltage</span><strong id="ups_battery">—</strong></div><div><span>Load</span><strong id="ups_load">—</strong></div><div><span>Runtime ETA</span><strong id="ups_runtime">—</strong></div><div><span>Status</span><strong id="ups_status">—</strong></div></div><div class="chart-legend interactive-legend" id="ups_legend"></div><div class="chart-wrap"><canvas class="history-chart interactive-chart" id="ups_chart" data-chart-height="260"></canvas><div class="chart-tooltip" id="ups_chart_tooltip"></div></div><div class="empty-chart" id="ups_empty">No UPS samples are stored in the selected range yet.</div></section>
 <section class="card dashboard-card monitoring-card"><div class="panel-heading"><div><h2>Wi-Fi Optimiser</h2><p>Access-point radio retries, channel utilisation, clients and recommended attention areas.</p></div></div><div class="chart-legend interactive-legend" id="wifi_legend"></div><div class="chart-wrap"><canvas class="history-chart interactive-chart" id="wifi_chart" data-chart-height="280"></canvas><div class="chart-tooltip" id="wifi_chart_tooltip"></div></div><div class="wifi-radio-grid" id="wifi_cards"></div><div class="empty-chart" id="wifi_empty">No Wi-Fi radio samples are stored in the selected range yet.</div></section>
 <script src="/static/dashboard-v2.js"></script>
+<script src="/static/dashboard-dev12.js"></script>
 {% endblock %}
