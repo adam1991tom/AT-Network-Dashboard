@@ -1,10 +1,32 @@
 {% extends "base.html" %}
 {% block content %}
-<section class="hero"><div><h1>Incidents</h1><p>Network, ISP, Wi-Fi and power events recorded by AT Network Dashboard.</p></div></section>
+<link rel="stylesheet" href="/static/monitoring.css">
+<section class="hero"><div><h1>Incidents</h1><p>Central history for ISP, gateway, Wi-Fi, UPS and monitoring faults.</p></div></section>
 <section class="card dashboard-card">
-  <div class="panel-heading"><div><h2>Incident Centre</h2><p>Active incidents are shown first, followed by recent resolved events.</p></div></div>
-  <div class="table-wrap"><table class="data-table"><thead><tr><th>Status</th><th>Severity</th><th>Started</th><th>Ended</th><th>Summary</th><th>Details</th></tr></thead><tbody>
-  {% if incidents %}{% for i in incidents %}<tr><td><span class="status-pill {{ 'warn' if i.active else 'good' }}">{{ 'ACTIVE' if i.active else 'RESOLVED' }}</span></td><td>{{ i.severity|upper }}</td><td>{{ i.started_at }}</td><td>{{ i.ended_at or '—' }}</td><td><strong>{{ i.summary }}</strong></td><td>{{ i.details or '—' }}</td></tr>{% endfor %}{% else %}<tr><td colspan="6" class="muted">No incidents have been recorded yet.</td></tr>{% endif %}
-  </tbody></table></div>
+  <div class="panel-heading"><div><h2>Incident Centre</h2><p>Active faults are shown first. Resolved incidents remain available for evidence and reporting.</p></div></div>
+  <div class="incident-summary-grid">
+    <div><span>Active</span><strong id="inc_active">0</strong></div><div><span>Critical</span><strong id="inc_critical">0</strong></div><div><span>Major</span><strong id="inc_major">0</strong></div><div><span>Warning</span><strong id="inc_warning">0</strong></div>
+  </div>
+  <div class="incident-filters">
+    <label>Status<select id="if_status"><option value="">All</option><option value="active">Active</option><option value="resolved">Resolved</option></select></label>
+    <label>Category<select id="if_category"><option value="">All categories</option><option value="isp">ISP / Internet</option><option value="gateway">Gateway</option><option value="wifi">Wi-Fi</option><option value="ups">UPS / Power</option></select></label>
+    <label>Severity<select id="if_severity"><option value="">All severities</option><option value="critical">Critical</option><option value="major">Major</option><option value="warning">Warning</option></select></label>
+    <label>Range<select id="if_range"><option value="24">24 hours</option><option value="168">7 days</option><option value="720">30 days</option><option value="2160">90 days</option><option value="0" selected>All</option></select></label>
+  </div>
+  <div class="incident-list" id="incident_list">
+  {% for i in incidents %}
+    <article class="incident-item severity-{{ i.severity|lower }}" data-active="{{ 1 if i.active else 0 }}" data-severity="{{ i.severity|lower }}" data-type="{{ i.incident_type|lower }}" data-start="{{ i.started_at }}">
+      <div class="incident-main"><span class="status-pill {{ 'bad' if i.active and i.severity|lower in ['critical','major'] else 'warn' if i.active else 'good' }}">{{ 'ACTIVE' if i.active else 'RESOLVED' }}</span><strong>{{ i.summary }}</strong><span class="incident-severity">{{ i.severity|upper }}</span></div>
+      <div class="incident-meta"><span>Started {{ i.started_at }}</span><span>Ended {{ i.ended_at or '—' }}</span><span>{{ i.incident_type }}</span></div>
+      <div class="incident-details">{{ i.details or 'No additional details.' }}</div>
+    </article>
+  {% else %}
+    <div class="empty-chart" style="display:flex">No incidents have been recorded yet. The monitoring engine will add faults here automatically.</div>
+  {% endfor %}
+  </div>
 </section>
+<script>
+function filterIncidents(){const s=document.getElementById('if_status').value,c=document.getElementById('if_category').value,v=document.getElementById('if_severity').value,h=Number(document.getElementById('if_range').value||0),cut=h?Date.now()-h*3600000:0;let active=0,critical=0,major=0,warning=0;document.querySelectorAll('.incident-item').forEach(el=>{const a=el.dataset.active==='1',sev=el.dataset.severity,type=el.dataset.type,start=new Date(el.dataset.start).getTime();if(a)active++;if(sev==='critical')critical++;if(sev==='major')major++;if(sev==='warning')warning++;const ok=(!s||(s==='active'?a:!a))&&(!c||type.startsWith(c))&&(!v||sev===v)&&(!cut||start>=cut);el.style.display=ok?'grid':'none'});document.getElementById('inc_active').textContent=active;document.getElementById('inc_critical').textContent=critical;document.getElementById('inc_major').textContent=major;document.getElementById('inc_warning').textContent=warning}
+['if_status','if_category','if_severity','if_range'].forEach(id=>document.getElementById(id).addEventListener('change',filterIncidents));filterIncidents();
+</script>
 {% endblock %}
