@@ -30,4 +30,6 @@ jobs:
           print(app.main.VERSION)
           PY
       - name: Validate compose file
-        run: AT_PROJECT_DIR="$PWD" docker compose config >/dev/null
+        run: |
+          cp .env.example .env
+          AT_PROJECT_DIR="$PWD" docker compose config >/dev/null
