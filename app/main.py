@@ -83,7 +83,7 @@ async def setup_admin(request:Request):
     return {"ok":True,"message":message}
 @app.get("/login",response_class=HTMLResponse)
 def login_page(request:Request):
-    if not has_admin():return RedirectResponse("/login",status_code=303)
+    if not has_admin():return RedirectResponse("/setup-admin",status_code=303)
     if session_user(request.cookies.get(COOKIE_NAME)):return RedirectResponse("/dashboard",status_code=303)
     return HTMLResponse(templates.get_template("login.html").render(request=request,version=VERSION))
 @app.post("/login")
