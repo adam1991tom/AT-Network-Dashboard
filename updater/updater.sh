@@ -5,6 +5,7 @@ STATE=/data/update-state.json
 REQUEST=/data/update-request.json
 PREVIOUS=/data/update-previous.txt
 REPO_API=https://api.github.com/repos/adam1991tom/AT-Network-Dashboard
+PROJECT_DIR=${AT_PROJECT_DIR:-/opt/AT-Network-Dashboard}
 
 state() {
   status="$1"; shift
@@ -12,6 +13,10 @@ state() {
   jq -n --arg status "$status" --arg message "$message" --arg ts "$(date -Iseconds)" '{status:$status,message:$message,updated_at:$ts}' > "$STATE.tmp"
   mv "$STATE.tmp" "$STATE"
 }
+
+if [ ! -d "$PROJECT_DIR/.git" ]; then
+  state failed "Updater cannot see the project Git checkout at $PROJECT_DIR"
+fi
 
 state idle "Updater ready"
 
@@ -25,11 +30,11 @@ while true; do
   TARGET=$(jq -r '.target // ""' "$REQUEST" 2>/dev/null || echo '')
   rm -f "$REQUEST"
 
-  PREV=$(git -C /workspace rev-parse HEAD 2>/dev/null || true)
+  PREV=$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null || true)
   [ -n "$PREV" ] && printf '%s\n' "$PREV" > "$PREVIOUS"
 
   state fetching "Fetching $CHANNEL update from GitHub"
-  if ! git -C /workspace fetch --all --tags --prune; then
+  if ! git -C "$PROJECT_DIR" fetch --all --tags --prune; then
     state failed "Git fetch failed; installation left unchanged"
     continue
   fi
@@ -44,32 +49,32 @@ while true; do
     fi
   else
     if [ -z "$TARGET" ] || [ "$TARGET" = "null" ]; then
-      TARGET=$(git -C /workspace rev-parse origin/main)
+      TARGET=$(git -C "$PROJECT_DIR" rev-parse origin/main)
     fi
   fi
 
-  if ! git -C /workspace checkout -f main >/dev/null 2>&1; then
-    git -C /workspace checkout -B main origin/main >/dev/null 2>&1 || true
+  if ! git -C "$PROJECT_DIR" checkout -f main >/dev/null 2>&1; then
+    git -C "$PROJECT_DIR" checkout -B main origin/main >/dev/null 2>&1 || true
   fi
-  if ! git -C /workspace reset --hard "$TARGET"; then
+  if ! git -C "$PROJECT_DIR" reset --hard "$TARGET"; then
     state failed "Could not switch source to requested update target"
-    [ -n "$PREV" ] && git -C /workspace reset --hard "$PREV" >/dev/null 2>&1 || true
+    [ -n "$PREV" ] && git -C "$PROJECT_DIR" reset --hard "$PREV" >/dev/null 2>&1 || true
     continue
   fi
 
-  state building "Building update; dashboard remains on the current container until build completes"
-  if ! (cd /workspace && docker compose build at-network-dashboard); then
+  state building "Building update; the current dashboard stays online until the build completes"
+  if ! (cd "$PROJECT_DIR" && docker compose build at-network-dashboard); then
     state rollback "Build failed; restoring previous source"
-    [ -n "$PREV" ] && git -C /workspace reset --hard "$PREV" >/dev/null 2>&1 || true
+    [ -n "$PREV" ] && git -C "$PROJECT_DIR" reset --hard "$PREV" >/dev/null 2>&1 || true
     state failed "Update build failed; previous version retained"
     continue
   fi
 
   state restarting "Restarting dashboard with the new build"
-  if ! (cd /workspace && docker compose up -d --no-deps at-network-dashboard); then
+  if ! (cd "$PROJECT_DIR" && docker compose up -d --no-deps at-network-dashboard); then
     state rollback "Restart failed; rolling back"
-    [ -n "$PREV" ] && git -C /workspace reset --hard "$PREV" >/dev/null 2>&1 || true
-    (cd /workspace && docker compose up -d --build --no-deps at-network-dashboard) >/dev/null 2>&1 || true
+    [ -n "$PREV" ] && git -C "$PROJECT_DIR" reset --hard "$PREV" >/dev/null 2>&1 || true
+    (cd "$PROJECT_DIR" && docker compose up -d --build --no-deps at-network-dashboard) >/dev/null 2>&1 || true
     state failed "Restart failed; rollback attempted"
     continue
   fi
@@ -80,8 +85,8 @@ while true; do
   else
     state rollback "Health check failed; restoring previous version"
     if [ -n "$PREV" ]; then
-      git -C /workspace reset --hard "$PREV" >/dev/null 2>&1 || true
-      (cd /workspace && docker compose up -d --build --no-deps at-network-dashboard) >/dev/null 2>&1 || true
+      git -C "$PROJECT_DIR" reset --hard "$PREV" >/dev/null 2>&1 || true
+      (cd "$PROJECT_DIR" && docker compose up -d --build --no-deps at-network-dashboard) >/dev/null 2>&1 || true
     fi
     state failed "New version failed health check; previous version restored"
   fi
