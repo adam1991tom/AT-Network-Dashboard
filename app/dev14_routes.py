@@ -8,9 +8,9 @@ from app.database import DB_PATH,connect
 from app.settings_store import all_settings,encryption_status
 from app.system_tools import status,apply_retention,backup_bytes
 
-router=APIRouter(tags=['dev14']);VERSION='2.0.0-dev14.1'
+router=APIRouter(tags=['system-tools']);VERSION='2.2.0'
 @router.get('/api/system/info')
-def system_info():return {'version':VERSION,'environment':CONFIG.environment,'database':str(DB_PATH),'database_exists':DB_PATH.exists(),'python':platform.python_version(),'platform':platform.system(),'hostname':platform.node(),'encryption':encryption_status(),'authentication':True,'schema':'dev14.1'}
+def system_info():return {'version':VERSION,'environment':CONFIG.environment,'database':str(DB_PATH),'database_exists':DB_PATH.exists(),'python':platform.python_version(),'platform':platform.system(),'hostname':platform.node(),'encryption':encryption_status(),'authentication':True,'schema':'2.2'}
 @router.get('/api/system/monitoring-status')
 def monitoring_status():return status()
 @router.post('/api/system/retention/apply')
@@ -60,4 +60,4 @@ async def incident_note(incident_id:int,request:Request):
  return {'ok':True}
 @router.get('/api/system/build-info')
 def build_info():
- cfg=all_settings();return {'version':VERSION,'schema':'dev14.1','update_channel':cfg.get('update_channel','stable'),'theme':cfg.get('theme','dark'),'accent':cfg.get('accent','green')}
+ cfg=all_settings();return {'version':VERSION,'schema':'2.2','update_channel':cfg.get('update_channel','stable'),'theme':cfg.get('theme','dark'),'accent':cfg.get('accent','green')}
