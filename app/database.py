@@ -1,21 +1,62 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from pathlib import Path
+from typing import Callable, TypeVar
 from app.config import CONFIG
 
 DB_PATH: Path = CONFIG.data_dir / "network.db"
+T = TypeVar("T")
 
 
 def connect() -> sqlite3.Connection:
-    con = sqlite3.connect(DB_PATH, timeout=5)
+    # Multiple dashboard processes share this SQLite database (web, monitor and
+    # speed-test worker). Give brief concurrent writes time to finish instead of
+    # immediately killing the monitoring cycle.
+    con = sqlite3.connect(DB_PATH, timeout=30, isolation_level=None)
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys=ON")
-    con.execute("PRAGMA busy_timeout=5000")
+    con.execute("PRAGMA busy_timeout=30000")
     con.execute("PRAGMA synchronous=NORMAL")
     con.execute("PRAGMA temp_store=MEMORY")
     con.execute("PRAGMA cache_size=-32000")
     return con
+
+
+def write_transaction(fn: Callable[[sqlite3.Connection], T], attempts: int = 8) -> T:
+    """Run a short IMMEDIATE transaction with bounded retry on SQLite contention."""
+    delay = 0.10
+    last: Exception | None = None
+    for attempt in range(max(1, attempts)):
+        con = connect()
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            result = fn(con)
+            con.commit()
+            return result
+        except sqlite3.OperationalError as exc:
+            try:
+                con.rollback()
+            except Exception:
+                pass
+            last = exc
+            if "locked" not in str(exc).lower() and "busy" not in str(exc).lower():
+                raise
+            if attempt >= attempts - 1:
+                raise
+            time.sleep(delay)
+            delay = min(2.0, delay * 1.8)
+        except Exception:
+            try:
+                con.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            con.close()
+    assert last is not None
+    raise last
 
 
 def _ensure_column(con, table, column, definition):
@@ -27,8 +68,10 @@ def _ensure_column(con, table, column, definition):
 def initialise() -> None:
     con = connect()
     try:
-        # WAL is persistent. Set it once at startup rather than on every DB connection.
+        # WAL allows readers to continue while one of the workers is writing.
         con.execute("PRAGMA journal_mode=WAL")
+        con.execute("PRAGMA wal_autocheckpoint=1000")
+        con.execute("BEGIN IMMEDIATE")
         con.executescript("""
         CREATE TABLE IF NOT EXISTS settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS secrets (secret_key TEXT PRIMARY KEY, encrypted_value TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
@@ -68,11 +111,15 @@ def initialise() -> None:
             _ensure_column(con, table, column, definition)
         con.execute("CREATE INDEX IF NOT EXISTS idx_incidents_key_active ON incidents(incident_key,active)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_incidents_active_started ON incidents(active,started_at)")
-        # Existing timestamps use both SQLite's space format and ISO T format. Expression
-        # indexes make range queries fast without rewriting or losing historical rows.
         for table in ("ping_history", "speedtest_history", "gateway_history", "ups_history", "wifi_history", "unifi_wan_history", "unifi_ap_traffic_history"):
             con.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_jd ON {table}(julianday(ts))")
         con.commit()
         con.execute("PRAGMA optimize")
+    except Exception:
+        try:
+            con.rollback()
+        except Exception:
+            pass
+        raise
     finally:
         con.close()
