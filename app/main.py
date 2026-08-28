@@ -21,7 +21,7 @@ from app.monitoring_routes import router as monitoring_router
 from app.settings_store import all_settings, encryption_status, get_secret, set_secret, set_settings
 from app.updater import check_updates, request_update, update_state
 
-VERSION = "2.0.0-dev14.1"
+VERSION = "2.2.0"
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="AT Network Dashboard", version=VERSION)
@@ -53,7 +53,13 @@ def startup() -> None: initialise(); start_monitoring()
 @app.middleware("http")
 async def authentication(request: Request, call_next):
     path=request.url.path; public=path.startswith("/static/") or path in {"/api/health","/login","/setup-admin"}
-    if public:return await call_next(request)
+    if public:
+        response=await call_next(request)
+        if path.startswith("/static/"):
+            response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"]="no-cache"
+            response.headers["Expires"]="0"
+        return response
     if not has_admin():
         if path.startswith("/api/"):return JSONResponse({"detail":"Administrator setup required"},status_code=401)
         return RedirectResponse("/setup-admin",status_code=303)
