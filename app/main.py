@@ -16,12 +16,12 @@ from app.dev14_routes import router as dev14_router
 from app.integrations.discord import DiscordNotifier
 from app.integrations.nut import NutPiHttpClient
 from app.integrations.unifi import UniFiClient
-from app.monitoring import start_monitoring
+from app.monitoring_v23 import start_monitoring
 from app.monitoring_routes import router as monitoring_router
 from app.settings_store import all_settings, encryption_status, get_secret, set_secret, set_settings
 from app.updater import check_updates, request_update, update_state
 
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="AT Network Dashboard", version=VERSION)
