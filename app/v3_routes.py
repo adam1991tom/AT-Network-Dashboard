@@ -11,7 +11,7 @@ from app.settings_store import all_settings, get_secret
 
 router=APIRouter(tags=['v3'])
 templates=Environment(loader=FileSystemLoader(Path(__file__).resolve().parent/'templates'),autoescape=select_autoescape(['html','xml']))
-VERSION='3.0.0'
+VERSION='3.1.0'
 
 def _page(request:Request,name:str,page:str,title:str):
  return HTMLResponse(templates.get_template(name).render(request=request,version=VERSION,page=page,title=title))
