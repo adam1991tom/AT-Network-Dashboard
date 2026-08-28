@@ -4,7 +4,8 @@ from pathlib import Path
 from fastapi import APIRouter, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from app.database import connect
+from app.database import connect, DB_PATH
+from app.config import CONFIG
 from app.integrations.unifi import UniFiClient
 from app.settings_store import all_settings, get_secret
 
@@ -15,6 +16,11 @@ VERSION='3.0.0'
 def _page(request:Request,name:str,page:str,title:str):
  return HTMLResponse(templates.get_template(name).render(request=request,version=VERSION,page=page,title=title))
 
+@router.get('/api/health')
+def v3_health():return {'status':'ok','version':VERSION,'environment':CONFIG.environment,'database':str(DB_PATH)}
+@router.get('/',response_class=HTMLResponse)
+@router.get('/dashboard',response_class=HTMLResponse)
+def v3_dashboard(request:Request):return _page(request,'dashboard.html','dashboard','Dashboard')
 @router.get('/isp',response_class=HTMLResponse)
 def isp_page(request:Request): return _page(request,'isp.html','isp','ISP')
 @router.get('/gateway',response_class=HTMLResponse)
@@ -31,8 +37,7 @@ def speed_sync_status(days:int=Query(365,ge=1,le=730)):
  except Exception as exc:return JSONResponse({'ok':False,'message':str(exc)},status_code=502)
  epochs=[int(r.get('epoch_ms') or 0) for r in controller if int(r.get('epoch_ms') or 0)>0]
  con=connect()
- try:
-  db={int(r[0]) for r in con.execute('SELECT epoch_ms FROM speedtest_history WHERE epoch_ms IS NOT NULL').fetchall()}
+ try:db={int(r[0]) for r in con.execute('SELECT epoch_ms FROM speedtest_history WHERE epoch_ms IS NOT NULL').fetchall()}
  finally:con.close()
  missing=[e for e in epochs if e not in db]
  return {'ok':True,'controller_count':len(epochs),'dashboard_count':len(db),'missing_count':len(missing),'missing_epochs':missing[:100],'oldest':controller[0].get('ts') if controller else None,'newest':controller[-1].get('ts') if controller else None}
@@ -74,7 +79,7 @@ def dashboard_summary():
   speed=con.execute('SELECT ts,download,upload,latency FROM speedtest_history ORDER BY epoch_ms DESC LIMIT 1').fetchone()
   gateway=con.execute('SELECT ts,cpu,memory,temperature,wan_up FROM gateway_history ORDER BY id DESC LIMIT 1').fetchone()
   ups=con.execute('SELECT ts,connected,status,load_pct,input_voltage FROM ups_history ORDER BY id DESC LIMIT 1').fetchone()
-  wifi=con.execute('SELECT MAX(retries),COUNT(DISTINCT device_id||band) FROM wifi_history WHERE datetime(ts)>=datetime(\'now\',\'-5 minutes\')').fetchone()
+  wifi=con.execute("SELECT MAX(retries),COUNT(DISTINCT COALESCE(device_id,'')||band) FROM wifi_history WHERE datetime(ts)>=datetime('now','-5 minutes')").fetchone()
   ping=con.execute('SELECT ts,latency,packet_loss,online FROM ping_history ORDER BY id DESC LIMIT 1').fetchone()
   return {'active_incidents':active,'speed':dict(speed) if speed else None,'gateway':dict(gateway) if gateway else None,'ups':dict(ups) if ups else None,'wifi':{'worst_retries':wifi[0] or 0,'radios':wifi[1] or 0},'ping':dict(ping) if ping else None}
  finally:con.close()
