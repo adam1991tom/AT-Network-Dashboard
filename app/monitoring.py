@@ -15,11 +15,14 @@ from app.settings_store import all_settings, get_secret
 _worker_started = False
 _worker_lock = threading.Lock()
 _last_speedtest_epoch = 0
+_last_speed_history_sync = 0.0
+
 
 def _bool(value: object, default: bool = False) -> bool:
     if value is None:
         return default
     return str(value).lower() in {"1", "true", "yes", "on"}
+
 
 def _float(value: Any, default: float | None = None) -> float | None:
     try:
@@ -27,8 +30,10 @@ def _float(value: Any, default: float | None = None) -> float | None:
     except (TypeError, ValueError):
         return default
 
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
 
 def ping_sample(target: str) -> dict[str, Any]:
     try:
@@ -42,8 +47,34 @@ def ping_sample(target: str) -> dict[str, Any]:
     except Exception:
         return {"target": target, "latency": None, "packet_loss": 100.0, "online": 0}
 
+
+def _store_speedtest(con, row: dict[str, Any], source: str = "unifi") -> bool:
+    try:
+        epoch_ms = int(row.get("epoch_ms") or 0)
+    except (TypeError, ValueError):
+        return False
+    if not epoch_ms or row.get("download") is None:
+        return False
+    ts = str(row.get("ts") or "").strip()
+    if not ts:
+        ts = datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc).isoformat()
+    cur = con.execute(
+        "INSERT OR IGNORE INTO speedtest_history(ts,epoch_ms,download,upload,latency,interface_name,wan_group,source) VALUES (?,?,?,?,?,?,?,?)",
+        (ts, epoch_ms, row.get("download"), row.get("upload"), row.get("latency"), row.get("interface_name"), row.get("wan_group") or "WAN", source),
+    )
+    return cur.rowcount > 0
+
+
+def _sync_unifi_speed_history(client: UniFiClient, con) -> int:
+    inserted = 0
+    for row in client.speedtest_history(365):
+        if _store_speedtest(con, row, "unifi-history"):
+            inserted += 1
+    return inserted
+
+
 def collect_once() -> None:
-    global _last_speedtest_epoch
+    global _last_speedtest_epoch, _last_speed_history_sync
     cfg = all_settings()
     ts = utc_now()
     con = connect()
@@ -72,22 +103,31 @@ def collect_once() -> None:
             if key and url:
                 try:
                     client = UniFiClient(url, key, _bool(cfg.get("unifi_verify_ssl")))
+
+                    # Pull the controller's retained speed-test archive on startup,
+                    # then refresh it every 15 minutes. This is the same history
+                    # represented by the UniFi Network Speed Tests panel.
+                    now_mono = time.monotonic()
+                    if _last_speed_history_sync == 0 or now_mono - _last_speed_history_sync >= 900:
+                        inserted = _sync_unifi_speed_history(client, con)
+                        _last_speed_history_sync = now_mono
+                        if inserted:
+                            print(f"monitoring: imported {inserted} UniFi speed-test history rows")
+
                     snapshot = client.snapshot()
                     gw = snapshot.get("gateway") or {}
                     con.execute(
                         "INSERT INTO gateway_history(ts,uptime,cpu,memory,temperature,wan_up,wan_ip,link_speed,rx_errors,tx_errors,rx_dropped,tx_dropped,rx_rate,tx_rate) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (ts, gw.get("uptime"), gw.get("cpu"), gw.get("memory"), gw.get("temperature"), 1 if gw.get("wan_up") else 0, gw.get("wan_ip"), gw.get("link_speed"), gw.get("rx_errors"), gw.get("tx_errors"), gw.get("rx_dropped"), gw.get("tx_dropped"), gw.get("rx_rate"), gw.get("tx_rate")),
                     )
+
                     speed = gw.get("speedtest")
                     if isinstance(speed, dict):
                         epoch_ms = int(speed.get("epoch_ms") or 0)
-                        if epoch_ms and epoch_ms != _last_speedtest_epoch and speed.get("download") is not None:
-                            speed_ts = datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc).isoformat()
-                            con.execute(
-                                "INSERT OR IGNORE INTO speedtest_history(ts,epoch_ms,download,upload,latency,interface_name,wan_group,source) VALUES (?,?,?,?,?,?,?,'unifi')",
-                                (speed_ts, epoch_ms, speed.get("download"), speed.get("upload"), speed.get("latency"), speed.get("interface_name"), speed.get("wan_group") or "WAN"),
-                            )
+                        if epoch_ms and epoch_ms != _last_speedtest_epoch:
+                            _store_speedtest(con, speed, "unifi-live")
                             _last_speedtest_epoch = epoch_ms
+
                     for ap in snapshot.get("aps", []):
                         for radio in ap.get("radios", []):
                             con.execute(
@@ -100,6 +140,7 @@ def collect_once() -> None:
     finally:
         con.close()
 
+
 def _worker() -> None:
     while True:
         started = time.monotonic()
@@ -109,6 +150,7 @@ def _worker() -> None:
             print(f"monitoring collection failed: {exc}")
         time.sleep(max(5.0, 30.0 - (time.monotonic() - started)))
 
+
 def start_monitoring() -> None:
     global _worker_started
     with _worker_lock:
@@ -116,6 +158,7 @@ def start_monitoring() -> None:
             return
         threading.Thread(target=_worker, name="at-network-monitor", daemon=True).start()
         _worker_started = True
+
 
 def _history(table: str, hours: int, columns: str = "*") -> list[dict[str, Any]]:
     hours = max(1, min(int(hours), 24 * 365))
@@ -126,20 +169,26 @@ def _history(table: str, hours: int, columns: str = "*") -> list[dict[str, Any]]
     finally:
         con.close()
 
+
 def ping_history(hours: int) -> list[dict[str, Any]]:
     return _history("ping_history", hours, "ts,target,latency,packet_loss,online")
 
+
 def speedtest_history(hours: int) -> list[dict[str, Any]]:
-    return _history("speedtest_history", hours, "ts,download,upload,latency,interface_name,wan_group,source")
+    return _history("speedtest_history", hours, "ts,epoch_ms,download,upload,latency,interface_name,wan_group,source")
+
 
 def gateway_history(hours: int) -> list[dict[str, Any]]:
     return _history("gateway_history", hours, "ts,uptime,cpu,memory,temperature,wan_up,wan_ip,link_speed,rx_errors,tx_errors,rx_dropped,tx_dropped,rx_rate,tx_rate")
 
+
 def ups_history(hours: int) -> list[dict[str, Any]]:
     return _history("ups_history", hours, "ts,connected,status,load_pct,input_voltage,output_voltage,battery_voltage,input_frequency,runtime_seconds")
 
+
 def wifi_history(hours: int) -> list[dict[str, Any]]:
     return _history("wifi_history", hours, "ts,device_id,ap_name,band,channel,width,retries,utilization,clients,satisfaction,tx_power")
+
 
 def live_snapshot() -> dict[str, Any]:
     con = connect()
