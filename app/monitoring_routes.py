@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Query, Request
@@ -9,12 +10,13 @@ from fastapi.responses import HTMLResponse, Response
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.database import connect
+from app.isp_report import build_evidence_zip, build_pdf
 from app.monitoring import gateway_history, live_snapshot, ping_history, speedtest_history, ups_history, wifi_history
 
 router = APIRouter(tags=["monitoring"])
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 templates = Environment(loader=FileSystemLoader(TEMPLATE_DIR), autoescape=select_autoescape(["html", "xml"]))
-VERSION = "2.0.0-dev10"
+VERSION = "2.0.0-dev11"
 
 @router.get("/api/monitoring/live")
 def live() -> dict: return live_snapshot()
@@ -51,17 +53,18 @@ def unifi_ap_traffic(hours: int = Query(24, ge=1, le=17520)) -> list[dict]:
     finally: con.close()
 
 @router.get("/api/incidents")
-def incidents_api(limit: int = Query(500, ge=1, le=5000)) -> dict:
+def incidents_api(limit: int = Query(1000, ge=1, le=5000)) -> dict:
     con = connect()
     try:
-        rows = con.execute("SELECT id,incident_type,severity,started_at,ended_at,summary,details,active FROM incidents ORDER BY active DESC,id DESC LIMIT ?", (limit,)).fetchall()
+        rows = con.execute("SELECT id,incident_type,incident_key,category,device,severity,started_at,ended_at,last_seen_at,summary,details,active FROM incidents ORDER BY active DESC,id DESC LIMIT ?", (limit,)).fetchall()
         return {"items": [dict(r) for r in rows]}
     finally: con.close()
 
 @router.get("/incidents", response_class=HTMLResponse)
 def incidents_page(request: Request) -> HTMLResponse:
     con = connect()
-    try: incidents = [dict(r) for r in con.execute("SELECT id,incident_type,severity,started_at,ended_at,summary,details,active FROM incidents ORDER BY active DESC,id DESC LIMIT 1000").fetchall()]
+    try:
+        incidents = [dict(r) for r in con.execute("SELECT id,incident_type,incident_key,category,device,severity,started_at,ended_at,last_seen_at,summary,details,active FROM incidents ORDER BY active DESC,id DESC LIMIT 2000").fetchall()]
     finally: con.close()
     return HTMLResponse(templates.get_template("incidents.html").render(request=request, version=VERSION, page="incidents", title="Incidents", incidents=incidents))
 
@@ -76,16 +79,38 @@ def reports_page(request: Request) -> HTMLResponse:
         def count(table: str) -> int:
             try: return int(con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
             except Exception: return 0
-        counts={"speedtests":count("speedtest_history"),"ping":count("ping_history"),"gateway":count("gateway_history"),"ups":count("ups_history"),"wifi":count("wifi_history"),"wan":count("unifi_wan_history")}
+        internet_incidents = int(con.execute("SELECT COUNT(*) FROM incidents WHERE category IN ('ISP','Internet','Gateway')").fetchone()[0])
+        counts={"speedtests":count("speedtest_history"),"ping":count("ping_history"),"gateway":count("gateway_history"),"wan":count("unifi_wan_history"),"incidents":internet_incidents}
     finally: con.close()
     return HTMLResponse(templates.get_template("reports.html").render(request=request, version=VERSION, page="reports", title="Reports", counts=counts))
+
+
+def _range(start: str | None, end: str | None, hours: int | None = None) -> tuple[str,str]:
+    now=datetime.now(timezone.utc)
+    if start and end:
+        try:
+            s=datetime.fromisoformat(start.replace('Z','+00:00')); e=datetime.fromisoformat(end.replace('Z','+00:00'))
+            if s.tzinfo is None:s=s.replace(tzinfo=timezone.utc)
+            if e.tzinfo is None:e=e.replace(tzinfo=timezone.utc)
+            return s.astimezone(timezone.utc).isoformat(),e.astimezone(timezone.utc).isoformat()
+        except Exception: pass
+    h=max(1,min(int(hours or 168),2160)); return (now-timedelta(hours=h)).isoformat(),now.isoformat()
+
+@router.get("/api/reports/isp.pdf")
+def isp_pdf(start: str | None = None, end: str | None = None, hours: int | None = Query(None, ge=1, le=2160)) -> Response:
+    s,e=_range(start,end,hours); data=build_pdf(s,e)
+    return Response(data,media_type="application/pdf",headers={"Content-Disposition":'attachment; filename="AT-Internet-Performance-Report.pdf"'})
+
+@router.get("/api/reports/isp-evidence.zip")
+def isp_evidence(start: str | None = None, end: str | None = None, hours: int | None = Query(None, ge=1, le=2160)) -> Response:
+    s,e=_range(start,end,hours); data=build_evidence_zip(s,e)
+    return Response(data,media_type="application/zip",headers={"Content-Disposition":'attachment; filename="AT-Internet-Evidence.zip"'})
+
 
 def _csv_response(table: str, filename: str) -> Response:
     con = connect()
     try:
-        cur=con.execute(f"SELECT * FROM {table} ORDER BY id ASC")
-        headers=[d[0] for d in cur.description]
-        rows=cur.fetchall()
+        cur=con.execute(f"SELECT * FROM {table} ORDER BY id ASC"); headers=[d[0] for d in cur.description]; rows=cur.fetchall()
     finally: con.close()
     stream=io.StringIO(); writer=csv.writer(stream); writer.writerow(headers)
     for row in rows: writer.writerow([row[h] for h in headers])
@@ -97,9 +122,5 @@ def export_speedtests() -> Response: return _csv_response("speedtest_history","a
 def export_ping() -> Response: return _csv_response("ping_history","at-network-ping.csv")
 @router.get("/api/reports/export/gateway.csv")
 def export_gateway() -> Response: return _csv_response("gateway_history","at-network-gateway.csv")
-@router.get("/api/reports/export/ups.csv")
-def export_ups() -> Response: return _csv_response("ups_history","at-network-ups.csv")
-@router.get("/api/reports/export/wifi.csv")
-def export_wifi() -> Response: return _csv_response("wifi_history","at-network-wifi.csv")
 @router.get("/api/reports/export/wan.csv")
 def export_wan() -> Response: return _csv_response("unifi_wan_history","at-network-unifi-wan.csv")
