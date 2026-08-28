@@ -1,0 +1,1 @@
+(()=>{const icons={dashboard:'▦',isp:'↕',gateway:'◇',wifi:'⌁',ups:'⚡',incidents:'△',reports:'▤',settings:'⚙',logout:'↪'};document.querySelectorAll('.rail-link').forEach(a=>{const key=a.dataset.icon;if(!key||!icons[key])return;const old=a.querySelector('.rail-icon');if(old)old.textContent=icons[key]})})();
