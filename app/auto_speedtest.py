@@ -1,7 +1,7 @@
 from __future__ import annotations
 import time
 from datetime import datetime,timedelta,timezone
-from app.database import connect
+from app.database import connect, write_transaction
 from app.integrations.unifi import UniFiClient
 from app.settings_store import all_settings,get_secret
 
@@ -19,28 +19,31 @@ def _parse(v):
  except Exception:return None
 
 def _ensure_audit():
- con=connect()
- try:
+ def op(con):
   con.execute('CREATE TABLE IF NOT EXISTS speedtest_schedule_audit(id INTEGER PRIMARY KEY AUTOINCREMENT,due_at TEXT NOT NULL,attempted_at TEXT NOT NULL,status TEXT NOT NULL,message TEXT NOT NULL DEFAULT \'\',interval_minutes INTEGER NOT NULL)')
-  con.execute('CREATE INDEX IF NOT EXISTS idx_speedtest_schedule_due ON speedtest_schedule_audit(due_at)');con.commit()
- finally:con.close()
+  con.execute('CREATE INDEX IF NOT EXISTS idx_speedtest_schedule_due ON speedtest_schedule_audit(due_at)')
+ write_transaction(op)
 def _audit(due,attempt,status,message,minutes):
- con=connect()
- try:con.execute('INSERT INTO speedtest_schedule_audit(due_at,attempted_at,status,message,interval_minutes) VALUES (?,?,?,?,?)',(due.isoformat(),attempt.isoformat(),status,str(message or ''),minutes));con.commit()
- finally:con.close()
+ write_transaction(lambda con: con.execute('INSERT INTO speedtest_schedule_audit(due_at,attempted_at,status,message,interval_minutes) VALUES (?,?,?,?,?)',(due.isoformat(),attempt.isoformat(),status,str(message or ''),minutes)))
 def _state(**values):
+ # Avoid taking a write lock every 15 seconds when the state has not changed.
  con=connect()
  try:
-  for k,v in values.items():con.execute('INSERT INTO settings(setting_key,setting_value,updated_at) VALUES (?,?,CURRENT_TIMESTAMP) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,updated_at=CURRENT_TIMESTAMP',(k,'' if v is None else str(v)))
-  con.commit()
+  current={r['setting_key']:r['setting_value'] for r in con.execute("SELECT setting_key,setting_value FROM settings WHERE setting_key LIKE 'speedtest_%'").fetchall()}
  finally:con.close()
+ changed={k:('' if v is None else str(v)) for k,v in values.items() if current.get(k)!=('' if v is None else str(v))}
+ if not changed:return
+ def op(con):
+  for k,v in changed.items():
+   con.execute('INSERT INTO settings(setting_key,setting_value,updated_at) VALUES (?,?,CURRENT_TIMESTAMP) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,updated_at=CURRENT_TIMESTAMP WHERE settings.setting_value<>excluded.setting_value',(k,v))
+ write_transaction(op)
 def _advance(due,now,minutes):
  step=timedelta(minutes=minutes);nxt=due+step
  while nxt<=now:nxt+=step
  return nxt
 
 def run_forever():
- print('auto-speedtest: v3 worker started');_ensure_audit()
+ print('auto-speedtest: v3.2.1 worker started');_ensure_audit()
  while True:
   try:
    cfg=all_settings();enabled=_bool(cfg.get('speedtest_auto_enabled'),True);minutes=_interval(cfg);now=_now()
