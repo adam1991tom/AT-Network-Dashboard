@@ -82,39 +82,52 @@ class UniFiClient:
         return number
 
     def speedtest_history(self, days: int = 365) -> list[dict[str, Any]]:
-        """Return retained UniFi gateway speed-test results with real timestamps.
+        """Return the retained Speed Tests list shown by UniFi Network.
 
-        UniFi versions expose this data through different endpoints. We try the
-        classic archive endpoint first because it is the same data shown in the
-        Network UI Speed Tests panel, then newer v2/legacy alternatives.
+        UniFi has moved this endpoint between releases, so this deliberately
+        tries the classic report archive first and newer alternatives second.
         """
         days = max(1, min(int(days), 730))
         end_ms = int(time.time() * 1000)
         start_ms = end_ms - days * 86400 * 1000
+        attrs = [
+            "time", "datetime", "timestamp", "rundate",
+            "xput_download", "xput_upload", "download", "upload",
+            "latency", "latency_avg", "ping", "interface", "wan_group",
+        ]
         raw_rows: list[dict[str, Any]] = []
 
         post_attempts = (
             "/proxy/network/api/s/default/stat/report/archive.speedtest",
+            "/proxy/network/api/s/default/stat/report/daily.speedtest",
             "/api/s/default/stat/report/archive.speedtest",
+            "/api/s/default/stat/report/daily.speedtest",
+        )
+        payloads = (
+            {"attrs": attrs, "start": start_ms, "end": end_ms},
+            {"attrs": attrs, "start": int(start_ms / 1000), "end": int(end_ms / 1000)},
+            {"start": start_ms, "end": end_ms},
         )
         for path in post_attempts:
-            try:
-                response = self._post(path, {"start": start_ms, "end": end_ms})
-                if response.ok:
-                    rows = self._extract_rows(response.json())
-                    if rows:
-                        raw_rows = rows
-                        break
-            except Exception:
-                continue
+            for payload in payloads:
+                try:
+                    response = self._post(path, payload)
+                    if response.ok:
+                        rows = self._extract_rows(response.json())
+                        if rows:
+                            raw_rows = rows
+                            break
+                except Exception:
+                    continue
+            if raw_rows:
+                break
 
         if not raw_rows:
-            get_attempts = (
+            for path in (
                 "/proxy/network/v2/api/site/default/speedtest",
                 "/proxy/network/api/s/default/stat/speedtest",
                 "/api/s/default/stat/speedtest",
-            )
-            for path in get_attempts:
+            ):
                 try:
                     response = self._get(path)
                     if response.ok:
@@ -129,6 +142,11 @@ class UniFiClient:
         seen: set[int] = set()
         for row in raw_rows:
             value = row.get("time") or row.get("timestamp") or row.get("rundate") or row.get("runDate")
+            if value is None and row.get("datetime"):
+                try:
+                    value = datetime.fromisoformat(str(row["datetime"]).replace("Z", "+00:00")).timestamp() * 1000
+                except Exception:
+                    value = None
             try:
                 epoch_ms = int(float(value))
             except (TypeError, ValueError):
@@ -206,8 +224,18 @@ class UniFiClient:
                 oldest = row_oldest if oldest is None else min(oldest, row_oldest)
                 newest = row_newest if newest is None else max(newest, row_newest)
             total += len(rows)
-            results[name] = {"available": bool(rows), "records": len(rows), "oldest": self._iso_ms(min(timestamps)) if timestamps else None, "newest": self._iso_ms(max(timestamps)) if timestamps else None, "error": None, "endpoint": endpoints[name]}
-        return {"ok": total > 0, "requested_days": max(1, min(int(days), 730)), "total_records": total, "oldest": self._iso_ms(oldest) if oldest else None, "newest": self._iso_ms(newest) if newest else None, "sources": results, "message": f"Found {total} retained UniFi history records" if total else "No retained history returned by the probed UniFi report endpoints"}
+            results[name] = {
+                "available": bool(rows), "records": len(rows),
+                "oldest": self._iso_ms(min(timestamps)) if timestamps else None,
+                "newest": self._iso_ms(max(timestamps)) if timestamps else None,
+                "error": None, "endpoint": endpoints[name],
+            }
+        return {
+            "ok": total > 0, "requested_days": max(1, min(int(days), 730)), "total_records": total,
+            "oldest": self._iso_ms(oldest) if oldest else None, "newest": self._iso_ms(newest) if newest else None,
+            "sources": results,
+            "message": f"Found {total} retained UniFi history records" if total else "No retained history returned by the probed UniFi report endpoints",
+        }
 
     @staticmethod
     def _iso_ms(value: int) -> str:
@@ -216,7 +244,12 @@ class UniFiClient:
     def devices(self) -> list[dict[str, Any]]:
         response = self._get("/proxy/network/api/s/default/stat/device")
         response.raise_for_status()
-        return self._extract_rows(response.json())
+        payload = response.json()
+        if isinstance(payload, dict):
+            data = payload.get("data", [])
+            if isinstance(data, list):
+                return [row for row in data if isinstance(row, dict)]
+        return []
 
     def snapshot(self) -> dict[str, Any]:
         devices = self.devices()
@@ -256,22 +289,43 @@ class UniFiClient:
         link_speed = wan.get("speed") or (device.get("uplink", {}).get("speed") if isinstance(device.get("uplink"), dict) else None)
         speedtest = None
         if speed:
-            epoch_value = speed.get("timestamp") or speed.get("rundate") or 0
-            try:
-                epoch_ms = int(float(epoch_value))
-                if epoch_ms and epoch_ms < 10_000_000_000:
-                    epoch_ms *= 1000
-            except (TypeError, ValueError):
-                epoch_ms = 0
-            speedtest = {"epoch_ms": epoch_ms, "download": self._number(speed.get("xput_download")), "upload": self._number(speed.get("xput_upload")), "latency": self._number(speed.get("latency")), "interface_name": str(speed.get("interface", "")), "wan_group": str(speed.get("wan_group", "WAN"))}
-        return {"name": device.get("name") or device.get("model") or "Gateway", "uptime": int(self._number(system.get("uptime") or device.get("uptime"), 0) or 0), "cpu": self._number(system.get("cpu")), "memory": self._number(system.get("mem")), "temperature": temp, "wan_up": bool(wan_up), "wan_ip": wan_ip, "link_speed": int(self._number(link_speed, 0) or 0), "rx_errors": int(self._number(device.get("rx_errors") or wan.get("rx_errors"), 0) or 0), "tx_errors": int(self._number(device.get("tx_errors") or wan.get("tx_errors"), 0) or 0), "rx_dropped": int(self._number(device.get("rx_dropped") or wan.get("rx_dropped"), 0) or 0), "tx_dropped": int(self._number(device.get("tx_dropped") or wan.get("tx_dropped"), 0) or 0), "rx_rate": self._number(device.get("rx_rate"), 0), "tx_rate": self._number(device.get("tx_rate"), 0), "speedtest": speedtest}
+            speedtest = {
+                "epoch_ms": int(speed.get("timestamp") or (float(speed.get("rundate", 0)) * 1000) or 0),
+                "download": self._number(speed.get("xput_download")), "upload": self._number(speed.get("xput_upload")),
+                "latency": self._number(speed.get("latency")), "interface_name": str(speed.get("interface", "")),
+                "wan_group": str(speed.get("wan_group", "WAN")),
+            }
+        return {
+            "name": device.get("name") or device.get("model") or "Gateway",
+            "uptime": int(self._number(system.get("uptime") or device.get("uptime"), 0) or 0),
+            "cpu": self._number(system.get("cpu")), "memory": self._number(system.get("mem")), "temperature": temp,
+            "wan_up": bool(wan_up), "wan_ip": wan_ip, "link_speed": int(self._number(link_speed, 0) or 0),
+            "rx_errors": int(self._number(device.get("rx_errors") or wan.get("rx_errors"), 0) or 0),
+            "tx_errors": int(self._number(device.get("tx_errors") or wan.get("tx_errors"), 0) or 0),
+            "rx_dropped": int(self._number(device.get("rx_dropped") or wan.get("rx_dropped"), 0) or 0),
+            "tx_dropped": int(self._number(device.get("tx_dropped") or wan.get("tx_dropped"), 0) or 0),
+            "rx_rate": self._number(device.get("rx_rate"), 0), "tx_rate": self._number(device.get("tx_rate"), 0), "speedtest": speedtest,
+        }
 
     def _ap_stats(self, device: dict[str, Any]) -> dict[str, Any]:
         radios = device.get("radio_table_stats") if isinstance(device.get("radio_table_stats"), list) else []
         rows: list[dict[str, Any]] = []
         for radio in radios:
-            if not isinstance(radio, dict): continue
+            if not isinstance(radio, dict):
+                continue
             code = str(radio.get("radio", ""))
             band = "2.4 GHz" if code in {"ng", "g"} else "5 GHz" if code in {"na", "a"} else code or "Unknown"
-            rows.append({"band": band, "channel": int(self._number(radio.get("channel"), 0) or 0), "width": int(self._number(radio.get("bw"), 0) or 0), "retries": self._number(radio.get("tx_retries_pct"), 0), "utilization": self._number(radio.get("cu_total"), 0), "clients": int(self._number(radio.get("num_sta"), 0) or 0), "satisfaction": self._number(radio.get("satisfaction"), device.get("satisfaction")), "tx_power": self._number(radio.get("tx_power"), 0)})
-        return {"device_id": device.get("external_id") or device.get("device_id") or device.get("mac"), "name": device.get("name") or device.get("model") or "Access Point", "uptime": int(self._number(device.get("uptime"), 0) or 0), "cpu": self._number((device.get("system-stats") or {}).get("cpu") if isinstance(device.get("system-stats"), dict) else None), "memory": self._number((device.get("system-stats") or {}).get("mem") if isinstance(device.get("system-stats"), dict) else None), "radios": rows}
+            rows.append({
+                "band": band, "channel": int(self._number(radio.get("channel"), 0) or 0),
+                "width": int(self._number(radio.get("bw"), 0) or 0), "retries": self._number(radio.get("tx_retries_pct"), 0),
+                "utilization": self._number(radio.get("cu_total"), 0), "clients": int(self._number(radio.get("num_sta"), 0) or 0),
+                "satisfaction": self._number(radio.get("satisfaction"), device.get("satisfaction")), "tx_power": self._number(radio.get("tx_power"), 0),
+            })
+        return {
+            "device_id": device.get("external_id") or device.get("device_id") or device.get("mac"),
+            "name": device.get("name") or device.get("model") or "Access Point",
+            "uptime": int(self._number(device.get("uptime"), 0) or 0),
+            "cpu": self._number((device.get("system-stats") or {}).get("cpu") if isinstance(device.get("system-stats"), dict) else None),
+            "memory": self._number((device.get("system-stats") or {}).get("mem") if isinstance(device.get("system-stats"), dict) else None),
+            "radios": rows,
+        }
