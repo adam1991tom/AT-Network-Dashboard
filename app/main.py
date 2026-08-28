@@ -21,7 +21,7 @@ from app.monitoring_routes import router as monitoring_router
 from app.settings_store import all_settings, encryption_status, get_secret, set_secret, set_settings
 from app.updater import check_updates, request_update, update_state
 
-VERSION = "2.3.0"
+VERSION = "3.1.0"
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="AT Network Dashboard", version=VERSION)
@@ -83,7 +83,7 @@ async def setup_admin(request:Request):
     return {"ok":True,"message":message}
 @app.get("/login",response_class=HTMLResponse)
 def login_page(request:Request):
-    if not has_admin():return RedirectResponse("/setup-admin",status_code=303)
+    if not has_admin():return RedirectResponse("/login",status_code=303)
     if session_user(request.cookies.get(COOKIE_NAME)):return RedirectResponse("/dashboard",status_code=303)
     return HTMLResponse(templates.get_template("login.html").render(request=request,version=VERSION))
 @app.post("/login")
