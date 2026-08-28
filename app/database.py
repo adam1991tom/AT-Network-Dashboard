@@ -2,26 +2,15 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-
 from app.config import CONFIG
-
 DB_PATH: Path = CONFIG.data_dir / "network.db"
-
 def connect() -> sqlite3.Connection:
-    con = sqlite3.connect(DB_PATH, timeout=15)
-    con.row_factory = sqlite3.Row
-    con.execute("PRAGMA journal_mode=WAL")
-    con.execute("PRAGMA foreign_keys=ON")
-    con.execute("PRAGMA busy_timeout=15000")
-    return con
-
-def _ensure_column(con: sqlite3.Connection, table: str, column: str, definition: str) -> None:
-    cols = {row[1] for row in con.execute(f"PRAGMA table_info({table})").fetchall()}
-    if column not in cols:
-        con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-
+    con=sqlite3.connect(DB_PATH,timeout=15);con.row_factory=sqlite3.Row;con.execute("PRAGMA journal_mode=WAL");con.execute("PRAGMA foreign_keys=ON");con.execute("PRAGMA busy_timeout=15000");return con
+def _ensure_column(con,table,column,definition):
+    cols={r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in cols:con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 def initialise() -> None:
-    con = connect()
+    con=connect()
     try:
         con.executescript("""
         CREATE TABLE IF NOT EXISTS settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
@@ -38,7 +27,7 @@ def initialise() -> None:
         CREATE INDEX IF NOT EXISTS idx_ups_history_ts ON ups_history(ts);
         CREATE TABLE IF NOT EXISTS wifi_history (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, device_id TEXT, ap_name TEXT NOT NULL, band TEXT NOT NULL, channel INTEGER, width INTEGER, retries REAL, utilization REAL, clients INTEGER, satisfaction REAL, tx_power REAL);
         CREATE INDEX IF NOT EXISTS idx_wifi_history_ts ON wifi_history(ts);
-        CREATE INDEX IF NOT EXISTS idx_wifi_history_ap ON wifi_history(ap_name, band, ts);
+        CREATE INDEX IF NOT EXISTS idx_wifi_history_ap ON wifi_history(ap_name,band,ts);
         CREATE TABLE IF NOT EXISTS unifi_wan_history (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, epoch_ms INTEGER NOT NULL, bucket TEXT NOT NULL, scope TEXT NOT NULL, object_id TEXT NOT NULL, clients INTEGER, rx_bytes REAL, tx_bytes REAL, UNIQUE(epoch_ms,bucket,scope,object_id));
         CREATE INDEX IF NOT EXISTS idx_unifi_wan_history_ts ON unifi_wan_history(ts);
         CREATE TABLE IF NOT EXISTS unifi_ap_traffic_history (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, epoch_ms INTEGER NOT NULL, device_id TEXT NOT NULL, clients INTEGER, bytes REAL, rx_bytes REAL, tx_bytes REAL, UNIQUE(epoch_ms,device_id));
@@ -47,12 +36,6 @@ def initialise() -> None:
         CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES admin_users(id) ON DELETE CASCADE);
         CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
         """)
-        _ensure_column(con, "ups_history", "runtime_seconds", "REAL")
-        _ensure_column(con, "incidents", "incident_key", "TEXT")
-        _ensure_column(con, "incidents", "category", "TEXT")
-        _ensure_column(con, "incidents", "device", "TEXT")
-        _ensure_column(con, "incidents", "last_seen_at", "TEXT")
-        con.execute("CREATE INDEX IF NOT EXISTS idx_incidents_key_active ON incidents(incident_key, active)")
-        con.commit()
-    finally:
-        con.close()
+        for table,column,definition in [("ups_history","runtime_seconds","REAL"),("incidents","incident_key","TEXT"),("incidents","category","TEXT"),("incidents","device","TEXT"),("incidents","last_seen_at","TEXT"),("incidents","operator_note","TEXT NOT NULL DEFAULT ''"),("incidents","fault_reference","TEXT NOT NULL DEFAULT ''")]:_ensure_column(con,table,column,definition)
+        con.execute("CREATE INDEX IF NOT EXISTS idx_incidents_key_active ON incidents(incident_key,active)");con.commit()
+    finally:con.close()
