@@ -53,14 +53,113 @@ class UniFiClient:
                 errors.append(f"{path}: {exc}")
         return {"ok": False, "message": "Unable to start UniFi speed test", "details": errors[-3:]}
 
+    @staticmethod
+    def _extract_rows(body: Any) -> list[dict[str, Any]]:
+        if isinstance(body, list):
+            return [x for x in body if isinstance(x, dict)]
+        if not isinstance(body, dict):
+            return []
+        for key in ("data", "results", "items"):
+            value = body.get(key)
+            if isinstance(value, list):
+                return [x for x in value if isinstance(x, dict)]
+        data = body.get("data")
+        if isinstance(data, dict):
+            for key in ("results", "items", "speedtests"):
+                value = data.get(key)
+                if isinstance(value, list):
+                    return [x for x in value if isinstance(x, dict)]
+        return []
+
+    @staticmethod
+    def _speed_mbps(value: Any) -> float | None:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if number > 100_000:
+            number /= 1_000_000.0
+        return number
+
+    def speedtest_history(self, days: int = 365) -> list[dict[str, Any]]:
+        """Return retained UniFi gateway speed-test results with real timestamps.
+
+        UniFi versions expose this data through different endpoints. We try the
+        classic archive endpoint first because it is the same data shown in the
+        Network UI Speed Tests panel, then newer v2/legacy alternatives.
+        """
+        days = max(1, min(int(days), 730))
+        end_ms = int(time.time() * 1000)
+        start_ms = end_ms - days * 86400 * 1000
+        raw_rows: list[dict[str, Any]] = []
+
+        post_attempts = (
+            "/proxy/network/api/s/default/stat/report/archive.speedtest",
+            "/api/s/default/stat/report/archive.speedtest",
+        )
+        for path in post_attempts:
+            try:
+                response = self._post(path, {"start": start_ms, "end": end_ms})
+                if response.ok:
+                    rows = self._extract_rows(response.json())
+                    if rows:
+                        raw_rows = rows
+                        break
+            except Exception:
+                continue
+
+        if not raw_rows:
+            get_attempts = (
+                "/proxy/network/v2/api/site/default/speedtest",
+                "/proxy/network/api/s/default/stat/speedtest",
+                "/api/s/default/stat/speedtest",
+            )
+            for path in get_attempts:
+                try:
+                    response = self._get(path)
+                    if response.ok:
+                        rows = self._extract_rows(response.json())
+                        if rows:
+                            raw_rows = rows
+                            break
+                except Exception:
+                    continue
+
+        output: list[dict[str, Any]] = []
+        seen: set[int] = set()
+        for row in raw_rows:
+            value = row.get("time") or row.get("timestamp") or row.get("rundate") or row.get("runDate")
+            try:
+                epoch_ms = int(float(value))
+            except (TypeError, ValueError):
+                continue
+            if epoch_ms < 10_000_000_000:
+                epoch_ms *= 1000
+            if epoch_ms < start_ms - 86400000 or epoch_ms > end_ms + 86400000 or epoch_ms in seen:
+                continue
+            download = self._speed_mbps(row.get("xput_download") or row.get("download") or row.get("download_mbps") or row.get("downloadMbps"))
+            upload = self._speed_mbps(row.get("xput_upload") or row.get("upload") or row.get("upload_mbps") or row.get("uploadMbps"))
+            latency = self._number(row.get("latency") or row.get("latency_avg") or row.get("ping"))
+            if download is None and upload is None:
+                continue
+            seen.add(epoch_ms)
+            output.append({
+                "epoch_ms": epoch_ms,
+                "ts": self._iso_ms(epoch_ms),
+                "download": download,
+                "upload": upload,
+                "latency": latency,
+                "interface_name": str(row.get("interface") or row.get("interface_name") or ""),
+                "wan_group": str(row.get("wan_group") or row.get("wan_networkgroup") or row.get("wanNetworkGroup") or "WAN"),
+            })
+        output.sort(key=lambda x: x["epoch_ms"])
+        return output
+
     def retained_history(self, days: int = 365) -> dict[str, list[dict[str, Any]]]:
         days = max(1, min(int(days), 730))
         end_ms = int(time.time() * 1000)
         start_ms = end_ms - (days * 86400 * 1000)
-        attrs = [
-            "time", "datetime", "bytes", "num_sta",
-            "wan-rx_bytes", "wan-tx_bytes", "rx_bytes", "tx_bytes",
-        ]
+        attrs = ["time", "datetime", "bytes", "num_sta", "wan-rx_bytes", "wan-tx_bytes", "rx_bytes", "tx_bytes"]
         candidates = {
             "site_daily": "/proxy/network/api/s/default/stat/report/daily.site",
             "gateway_hourly": "/proxy/network/api/s/default/stat/report/hourly.gw",
@@ -73,10 +172,7 @@ class UniFiClient:
             try:
                 response = self._post(path, {"attrs": attrs, "start": start_ms, "end": end_ms})
                 if response.ok:
-                    body = response.json()
-                    data = body.get("data", []) if isinstance(body, dict) else []
-                    if isinstance(data, list):
-                        rows = [r for r in data if isinstance(r, dict)]
+                    rows = self._extract_rows(response.json())
             except Exception:
                 rows = []
             output[name] = rows
@@ -88,14 +184,12 @@ class UniFiClient:
         oldest: int | None = None
         newest: int | None = None
         total = 0
-
         endpoints = {
             "site_daily": "/proxy/network/api/s/default/stat/report/daily.site",
             "gateway_hourly": "/proxy/network/api/s/default/stat/report/hourly.gw",
             "ap_hourly": "/proxy/network/api/s/default/stat/report/hourly.ap",
             "site_hourly": "/proxy/network/api/s/default/stat/report/hourly.site",
         }
-
         for name, rows in rows_by_source.items():
             timestamps: list[int] = []
             for row in rows:
@@ -112,24 +206,8 @@ class UniFiClient:
                 oldest = row_oldest if oldest is None else min(oldest, row_oldest)
                 newest = row_newest if newest is None else max(newest, row_newest)
             total += len(rows)
-            results[name] = {
-                "available": bool(rows),
-                "records": len(rows),
-                "oldest": self._iso_ms(min(timestamps)) if timestamps else None,
-                "newest": self._iso_ms(max(timestamps)) if timestamps else None,
-                "error": None,
-                "endpoint": endpoints[name],
-            }
-
-        return {
-            "ok": total > 0,
-            "requested_days": max(1, min(int(days), 730)),
-            "total_records": total,
-            "oldest": self._iso_ms(oldest) if oldest else None,
-            "newest": self._iso_ms(newest) if newest else None,
-            "sources": results,
-            "message": f"Found {total} retained UniFi history records" if total else "No retained history returned by the probed UniFi report endpoints",
-        }
+            results[name] = {"available": bool(rows), "records": len(rows), "oldest": self._iso_ms(min(timestamps)) if timestamps else None, "newest": self._iso_ms(max(timestamps)) if timestamps else None, "error": None, "endpoint": endpoints[name]}
+        return {"ok": total > 0, "requested_days": max(1, min(int(days), 730)), "total_records": total, "oldest": self._iso_ms(oldest) if oldest else None, "newest": self._iso_ms(newest) if newest else None, "sources": results, "message": f"Found {total} retained UniFi history records" if total else "No retained history returned by the probed UniFi report endpoints"}
 
     @staticmethod
     def _iso_ms(value: int) -> str:
@@ -138,12 +216,7 @@ class UniFiClient:
     def devices(self) -> list[dict[str, Any]]:
         response = self._get("/proxy/network/api/s/default/stat/device")
         response.raise_for_status()
-        payload = response.json()
-        if isinstance(payload, dict):
-            data = payload.get("data", [])
-            if isinstance(data, list):
-                return [row for row in data if isinstance(row, dict)]
-        return []
+        return self._extract_rows(response.json())
 
     def snapshot(self) -> dict[str, Any]:
         devices = self.devices()
@@ -183,7 +256,14 @@ class UniFiClient:
         link_speed = wan.get("speed") or (device.get("uplink", {}).get("speed") if isinstance(device.get("uplink"), dict) else None)
         speedtest = None
         if speed:
-            speedtest = {"epoch_ms": int(speed.get("timestamp") or (float(speed.get("rundate", 0)) * 1000) or 0), "download": self._number(speed.get("xput_download")), "upload": self._number(speed.get("xput_upload")), "latency": self._number(speed.get("latency")), "interface_name": str(speed.get("interface", "")), "wan_group": str(speed.get("wan_group", "WAN"))}
+            epoch_value = speed.get("timestamp") or speed.get("rundate") or 0
+            try:
+                epoch_ms = int(float(epoch_value))
+                if epoch_ms and epoch_ms < 10_000_000_000:
+                    epoch_ms *= 1000
+            except (TypeError, ValueError):
+                epoch_ms = 0
+            speedtest = {"epoch_ms": epoch_ms, "download": self._number(speed.get("xput_download")), "upload": self._number(speed.get("xput_upload")), "latency": self._number(speed.get("latency")), "interface_name": str(speed.get("interface", "")), "wan_group": str(speed.get("wan_group", "WAN"))}
         return {"name": device.get("name") or device.get("model") or "Gateway", "uptime": int(self._number(system.get("uptime") or device.get("uptime"), 0) or 0), "cpu": self._number(system.get("cpu")), "memory": self._number(system.get("mem")), "temperature": temp, "wan_up": bool(wan_up), "wan_ip": wan_ip, "link_speed": int(self._number(link_speed, 0) or 0), "rx_errors": int(self._number(device.get("rx_errors") or wan.get("rx_errors"), 0) or 0), "tx_errors": int(self._number(device.get("tx_errors") or wan.get("tx_errors"), 0) or 0), "rx_dropped": int(self._number(device.get("rx_dropped") or wan.get("rx_dropped"), 0) or 0), "tx_dropped": int(self._number(device.get("tx_dropped") or wan.get("tx_dropped"), 0) or 0), "rx_rate": self._number(device.get("rx_rate"), 0), "tx_rate": self._number(device.get("tx_rate"), 0), "speedtest": speedtest}
 
     def _ap_stats(self, device: dict[str, Any]) -> dict[str, Any]:
