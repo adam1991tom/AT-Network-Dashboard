@@ -14,7 +14,7 @@ from app.monitoring import gateway_history, live_snapshot, ping_history, speedte
 router = APIRouter(tags=["monitoring"])
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 templates = Environment(loader=FileSystemLoader(TEMPLATE_DIR), autoescape=select_autoescape(["html", "xml"]))
-VERSION = "2.0.0-dev8"
+VERSION = "2.0.0-dev10"
 
 @router.get("/api/monitoring/live")
 def live() -> dict: return live_snapshot()
@@ -27,16 +27,18 @@ def gateway(hours: int = Query(24, ge=1, le=8760)) -> list[dict]: return gateway
 @router.get("/api/monitoring/ups")
 def ups(hours: int = Query(24, ge=1, le=8760)) -> list[dict]: return ups_history(hours)
 @router.get("/api/monitoring/wifi")
-def wifi(hours: int = Query(24, ge=1, le=8760)) -> list[dict]: return wifi_history(hours)
+def wifi(hours: int = Query(24, ge=1, le=8760), limit: int = Query(0, ge=0, le=10000)) -> list[dict]:
+    rows = wifi_history(hours)
+    return rows[-limit:] if limit else rows
 
 @router.get("/api/monitoring/unifi-wan")
 def unifi_wan(hours: int = Query(24, ge=1, le=17520)) -> list[dict]:
     con = connect()
     try:
         if hours > 24 * 14:
-            rows = con.execute("""SELECT ts,bucket,scope,object_id,clients,rx_bytes,tx_bytes FROM unifi_wan_history WHERE bucket='daily' AND scope='site' AND datetime(ts) >= datetime('now', ?) ORDER BY datetime(ts) ASC""", (f"-{hours} hours",)).fetchall()
+            rows = con.execute("SELECT ts,bucket,scope,object_id,clients,rx_bytes,tx_bytes FROM unifi_wan_history WHERE bucket='daily' AND scope='site' AND datetime(ts) >= datetime('now', ?) ORDER BY datetime(ts) ASC", (f"-{hours} hours",)).fetchall()
         else:
-            rows = con.execute("""SELECT ts,bucket,scope,object_id,clients,rx_bytes,tx_bytes FROM unifi_wan_history WHERE bucket='hourly' AND scope='gateway' AND datetime(ts) >= datetime('now', ?) ORDER BY datetime(ts) ASC""", (f"-{hours} hours",)).fetchall()
+            rows = con.execute("SELECT ts,bucket,scope,object_id,clients,rx_bytes,tx_bytes FROM unifi_wan_history WHERE bucket='hourly' AND scope='gateway' AND datetime(ts) >= datetime('now', ?) ORDER BY datetime(ts) ASC", (f"-{hours} hours",)).fetchall()
         return [dict(row) for row in rows]
     finally: con.close()
 
@@ -48,10 +50,18 @@ def unifi_ap_traffic(hours: int = Query(24, ge=1, le=17520)) -> list[dict]:
         return [dict(row) for row in rows]
     finally: con.close()
 
+@router.get("/api/incidents")
+def incidents_api(limit: int = Query(500, ge=1, le=5000)) -> dict:
+    con = connect()
+    try:
+        rows = con.execute("SELECT id,incident_type,severity,started_at,ended_at,summary,details,active FROM incidents ORDER BY active DESC,id DESC LIMIT ?", (limit,)).fetchall()
+        return {"items": [dict(r) for r in rows]}
+    finally: con.close()
+
 @router.get("/incidents", response_class=HTMLResponse)
 def incidents_page(request: Request) -> HTMLResponse:
     con = connect()
-    try: incidents = [dict(r) for r in con.execute("SELECT id,incident_type,severity,started_at,ended_at,summary,details,active FROM incidents ORDER BY active DESC,id DESC LIMIT 250").fetchall()]
+    try: incidents = [dict(r) for r in con.execute("SELECT id,incident_type,severity,started_at,ended_at,summary,details,active FROM incidents ORDER BY active DESC,id DESC LIMIT 1000").fetchall()]
     finally: con.close()
     return HTMLResponse(templates.get_template("incidents.html").render(request=request, version=VERSION, page="incidents", title="Incidents", incidents=incidents))
 
