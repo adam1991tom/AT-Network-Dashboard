@@ -6,8 +6,8 @@
   const fmt=(v,d=0)=>num(v)==null?'—':num(v).toFixed(d);
   const when=v=>{const d=new Date(v);return Number.isFinite(d.getTime())?d.toLocaleString([], {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'}):'—'};
 
-  // Use the real test timestamp/epoch as identity. Do not discard legitimate tests merely
-  // because consecutive results happen to have the same measured values.
+  // Use the real UniFi run timestamp/epoch as identity. Similar consecutive speeds are still
+  // separate tests; only rows that describe the same run are collapsed.
   window.uniqueSpeedRows=function(rows){
     const byEpoch=new Map();
     for(const r of rows||[]){
@@ -22,6 +22,7 @@
     return [...byEpoch.values()].sort((a,b)=>Number(a.epoch_ms||new Date(a.ts).getTime())-Number(b.epoch_ms||new Date(b.ts).getTime()));
   };
 
+  const selectedHours=()=>Number(document.querySelector('[data-range-group] .range-button.active')?.dataset.hours||24)||24;
   let expanded=false;
   function render(rows){
     const body=$('speed_results_body'), count=$('speed_results_count'), empty=$('speed_results_empty'), toggle=$('speed_results_toggle');
@@ -45,8 +46,7 @@
 
   async function refresh(){
     try{
-      const hours=Number(window.rangeHours||24) || 24;
-      const r=await fetch(`/api/monitoring/speedtests?hours=${hours}`,{cache:'no-store'});
+      const r=await fetch(`/api/monitoring/speedtests?hours=${selectedHours()}`,{cache:'no-store'});
       if(r.status===401){location.href='/login';return}
       if(!r.ok) throw new Error(`HTTP ${r.status}`);
       render(await r.json());
@@ -57,7 +57,7 @@
   }
 
   $('speed_results_toggle')?.addEventListener('click',()=>{expanded=!expanded;refresh()});
-  document.querySelectorAll('[data-range-group] .range-button').forEach(b=>b.addEventListener('click',()=>setTimeout(refresh,120)));
+  document.querySelectorAll('[data-range-group] .range-button').forEach(b=>b.addEventListener('click',()=>setTimeout(refresh,180)));
   $('run_speedtest_button')?.addEventListener('click',()=>{setTimeout(refresh,18000);setTimeout(refresh,35000)});
   refresh();
   setInterval(refresh,60000);
