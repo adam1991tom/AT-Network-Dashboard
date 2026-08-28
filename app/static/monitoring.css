@@ -1,21 +1,19 @@
 .monitoring-card { margin-bottom: 16px; min-width: 0; width: 100%; box-sizing: border-box; overflow: hidden; }
 .range-heading { align-items: center; }
 .range-buttons { display: flex; gap: 7px; flex-wrap: wrap; }
-.range-button {
-  border: 1px solid var(--border); background: #202938; color: var(--text);
-  border-radius: 9px; padding: 8px 12px; font-weight: 750; cursor: pointer;
-}
+.range-button { border: 1px solid var(--border); background: #202938; color: var(--text); border-radius: 9px; padding: 8px 12px; font-weight: 750; cursor: pointer; }
 .range-button:hover { border-color: var(--accent-border); }
 .range-button.active { background: var(--accent); border-color: var(--accent-border); color: #07110b; }
-.history-chart {
-  width: 100% !important; max-width: 100%; min-width: 0; box-sizing: border-box; display: block;
-  border-radius: 11px; background: rgba(4,9,15,.34);
-  border: 1px solid rgba(41,50,65,.55); margin-top: 8px;
-}
-.chart-legend { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; min-height: 25px; color: var(--muted); font-size: .76rem; }
+.history-chart { width: 100% !important; max-width: 100%; min-width: 0; box-sizing: border-box; display: block; border-radius: 11px; background: rgba(4,9,15,.34); border: 1px solid rgba(41,50,65,.55); margin-top: 8px; }
+.chart-legend { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; min-height: 28px; color: var(--muted); font-size: .76rem; }
 .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .chart-legend i { display: inline-block; width: 22px; height: 4px; border-radius: 4px; }
 .chart-legend .current-values { margin-left: auto; color: var(--text); }
+.legend-toggle,.legend-show-all { border: 0; background: transparent; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 6px; cursor: pointer; font: inherit; }
+.legend-toggle:hover,.legend-show-all:hover { background: rgba(255,255,255,.06); color: var(--text); }
+.legend-toggle i { display:inline-block; width:22px; height:4px; border-radius:4px; }
+.legend-toggle.off { opacity:.34; text-decoration:line-through; }
+.legend-show-all { margin-left:auto; color:#7fc1ff; }
 .empty-chart { display: none; min-height: 110px; align-items: center; justify-content: center; color: var(--muted); padding: 35px 15px; text-align: center; }
 .gateway-stats { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 10px; margin-top: 12px; }
 .gateway-stats > div { border: 1px solid var(--border); border-radius: 10px; padding: 11px; display: grid; gap: 4px; }
@@ -33,11 +31,27 @@
 .wifi-card-metrics span { color: var(--muted); font-size: .68rem; text-transform: uppercase; }
 .wifi-card-metrics strong { font-size: .86rem; }
 .state-warn { color: #fbbf24; }
-@media (max-width: 1100px) {
-  .gateway-stats { grid-template-columns: repeat(3,minmax(0,1fr)); }
-  .wifi-card-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); }
-}
-@media (max-width: 800px) {
-  .wifi-radio-grid { grid-template-columns: 1fr; }
-  .gateway-stats { grid-template-columns: repeat(2,minmax(0,1fr)); }
-}
+.wifi-history-tools,.incident-filters { display:flex; gap:10px; flex-wrap:wrap; margin:10px 0 12px; }
+.wifi-history-tools label,.incident-filters label { min-width:145px; color:var(--muted); font-size:.7rem; display:grid; gap:5px; }
+.wifi-history-tools select,.incident-filters select { min-width:145px; }
+.wifi-history-summary { color:var(--muted); font-size:.72rem; margin:0 0 8px; }
+.wifi-history-scroll { max-height:520px; overflow:auto; border:1px solid var(--border); border-radius:8px; }
+.wifi-history-scroll thead th { position:sticky; top:0; z-index:2; background:#161b22; }
+.data-table tr.row-warning td { background:rgba(245,158,11,.07); }
+.data-table tr.row-major td { background:rgba(239,68,68,.09); }
+.incident-summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:12px; }
+.incident-summary-grid>div { border:1px solid var(--border); border-radius:8px; padding:10px 12px; display:grid; gap:4px; background:rgba(0,0,0,.08); }
+.incident-summary-grid span { color:var(--muted); font-size:.68rem; text-transform:uppercase; }
+.incident-summary-grid strong { font-size:1.1rem; }
+.incident-list { display:grid; gap:8px; max-height:650px; overflow:auto; padding-right:4px; }
+.incident-item { border:1px solid var(--border); border-left-width:4px; border-radius:8px; padding:11px 12px; gap:7px; background:rgba(0,0,0,.08); }
+.incident-item.severity-critical { border-left-color:#ff3b4d; }
+.incident-item.severity-major { border-left-color:#ff7a45; }
+.incident-item.severity-warning { border-left-color:#f5b942; }
+.incident-main { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.incident-main strong { font-size:.88rem; }
+.incident-severity { margin-left:auto; color:var(--muted); font-size:.68rem; font-weight:800; }
+.incident-meta { display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:.68rem; }
+.incident-details { color:#c8d1dc; font-size:.74rem; }
+@media (max-width: 1100px) { .gateway-stats { grid-template-columns: repeat(3,minmax(0,1fr)); } .wifi-card-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+@media (max-width: 800px) { .wifi-radio-grid { grid-template-columns: 1fr; } .gateway-stats { grid-template-columns: repeat(2,minmax(0,1fr)); } .incident-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));} }
