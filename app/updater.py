@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 from typing import Any
@@ -26,24 +27,38 @@ def update_state() -> dict[str, Any]:
     return data
 
 
+def _same_version(a: str, b: str) -> bool:
+    return a.strip().lstrip("vV") == b.strip().lstrip("vV")
+
+
 def check_updates(current_version: str, channel: str) -> dict[str, Any]:
     channel = "beta" if str(channel).lower() == "beta" else "stable"
+    headers = {"Accept": "application/vnd.github+json"}
     try:
         if channel == "stable":
-            r = requests.get(f"https://api.github.com/repos/{REPO}/releases/latest", timeout=10, headers={"Accept":"application/vnd.github+json"})
+            r = requests.get(f"https://api.github.com/repos/{REPO}/releases/latest", timeout=10, headers=headers)
             if r.status_code == 404:
                 return {"ok": True, "channel": channel, "current": current_version, "available": False, "message": "No stable GitHub release has been published yet"}
             r.raise_for_status()
             data = r.json()
             target = str(data.get("tag_name") or "").strip()
             notes = str(data.get("body") or "")[:8000]
-            return {"ok": True, "channel": channel, "current": current_version, "latest": target, "available": bool(target and target != current_version), "notes": notes, "published_at": data.get("published_at")}
-        r = requests.get(f"https://api.github.com/repos/{REPO}/commits/main", timeout=10, headers={"Accept":"application/vnd.github+json"})
-        r.raise_for_status()
-        data = r.json()
-        target = str(data.get("sha") or "")
-        message = str(((data.get("commit") or {}).get("message") or "")).splitlines()[0]
-        return {"ok": True, "channel": channel, "current": current_version, "latest": target[:12], "target": target, "available": True, "notes": message}
+            return {"ok": True, "channel": channel, "current": current_version, "latest": target, "available": bool(target and not _same_version(target, current_version)), "notes": notes, "published_at": data.get("published_at")}
+
+        commit_r = requests.get(f"https://api.github.com/repos/{REPO}/commits/main", timeout=10, headers=headers)
+        commit_r.raise_for_status()
+        commit = commit_r.json()
+        target = str(commit.get("sha") or "")
+        message = str(((commit.get("commit") or {}).get("message") or "")).splitlines()[0]
+
+        version_r = requests.get(f"https://api.github.com/repos/{REPO}/contents/VERSION?ref=main", timeout=10, headers=headers)
+        version_r.raise_for_status()
+        version_data = version_r.json()
+        latest_version = ""
+        encoded = str(version_data.get("content") or "").replace("\n", "")
+        if encoded:
+            latest_version = base64.b64decode(encoded).decode("utf-8").strip()
+        return {"ok": True, "channel": channel, "current": current_version, "latest": latest_version or target[:12], "target": target, "available": bool(target and (not latest_version or not _same_version(latest_version, current_version))), "notes": message}
     except Exception as exc:
         return {"ok": False, "channel": channel, "current": current_version, "available": False, "message": str(exc)}
 
