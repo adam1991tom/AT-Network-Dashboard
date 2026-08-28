@@ -9,6 +9,7 @@ from app.config import CONFIG
 from app.integrations.unifi import UniFiClient
 from app.settings_store import all_settings, get_secret
 from app.version import APP_VERSION
+from app.monitoring_v23 import monitor_state
 
 router=APIRouter(tags=['v3'])
 templates=Environment(loader=FileSystemLoader(Path(__file__).resolve().parent/'templates'),autoescape=select_autoescape(['html','xml']))
@@ -53,6 +54,7 @@ async def speed_sync(request:Request):
  except Exception as exc:return JSONResponse({'ok':False,'message':str(exc)},status_code=502)
  con=connect(); inserted=0
  try:
+  con.execute('BEGIN IMMEDIATE')
   if rebuild:con.execute("DELETE FROM speedtest_history WHERE source IN ('unifi-history','unifi-live','unifi')")
   for r in rows:
    epoch=int(r.get('epoch_ms') or 0)
@@ -69,8 +71,36 @@ def gateway_extra():
  cfg=all_settings(); url=str(cfg.get('unifi_url') or '').strip(); key=get_secret('unifi_api_key') or ''
  if not url or not key:return JSONResponse({'ok':False,'message':'UniFi is not configured'},status_code=400)
  try:
-  snap=UniFiClient(url,key,str(cfg.get('unifi_verify_ssl') or 'false').lower()=='true').snapshot(); return {'ok':True,'gateway':snap.get('gateway') or {}}
+  snap=UniFiClient(url,key,str(cfg.get('unifi_verify_ssl') or 'false').lower()=='true').snapshot(); return {'ok':True,'gateway':snap.get('gateway') or {},'fetched_at':datetime.now(timezone.utc).isoformat()}
  except Exception as exc:return JSONResponse({'ok':False,'message':str(exc)},status_code=502)
+
+@router.get('/api/unifi/diagnostics')
+def unifi_diagnostics():
+ cfg=all_settings(); url=str(cfg.get('unifi_url') or '').strip(); key=get_secret('unifi_api_key') or ''
+ if not url or not key:return JSONResponse({'ok':False,'message':'UniFi is not configured'},status_code=400)
+ client=UniFiClient(url,key,str(cfg.get('unifi_verify_ssl') or 'false').lower()=='true')
+ try:diag=client.diagnostics(); snap=client.snapshot()
+ except Exception as exc:return JSONResponse({'ok':False,'message':str(exc)},status_code=502)
+ con=connect(); latest={}
+ try:
+  for table in ('gateway_history','wifi_history','ping_history','ups_history','speedtest_history','unifi_wan_history','unifi_ap_traffic_history'):
+   row=con.execute(f'SELECT COUNT(*) c, MAX(ts) newest FROM {table}').fetchone();latest[table]={'count':row['c'],'newest':row['newest']}
+ finally:con.close()
+ return {'ok':diag.get('ok',False),'controller':diag,'gateway':snap.get('gateway') or {},'database':latest,'collector':monitor_state(),'checked_at':datetime.now(timezone.utc).isoformat()}
+
+@router.get('/api/system/source-health')
+def source_health():
+ now=datetime.now(timezone.utc); con=connect(); sources={}
+ try:
+  for name,table in [('gateway','gateway_history'),('wifi','wifi_history'),('ping','ping_history'),('ups','ups_history'),('speedtest','speedtest_history')]:
+   row=con.execute(f'SELECT MAX(ts) newest FROM {table}').fetchone(); newest=row['newest'] if row else None; age=None
+   if newest:
+    try:
+     d=datetime.fromisoformat(str(newest).replace('Z','+00:00'));d=d if d.tzinfo else d.replace(tzinfo=timezone.utc);age=max(0,(now-d.astimezone(timezone.utc)).total_seconds())
+    except Exception:pass
+   sources[name]={'newest':newest,'age_seconds':age,'stale':age is None or age>180}
+ finally:con.close()
+ return {'ok':not any(v['stale'] for k,v in sources.items() if k!='speedtest'),'sources':sources,'collector':monitor_state(),'checked_at':now.isoformat()}
 
 @router.get('/api/dashboard/summary')
 def dashboard_summary():
