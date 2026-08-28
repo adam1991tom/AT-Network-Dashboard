@@ -1,6 +1,6 @@
 from __future__ import annotations
 import csv,io,os,platform,sqlite3,zipfile
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 from fastapi import APIRouter,Request,Query
 from fastapi.responses import Response,JSONResponse
 from app.config import CONFIG
@@ -8,9 +8,9 @@ from app.database import DB_PATH,connect
 from app.settings_store import all_settings,encryption_status
 from app.system_tools import status,apply_retention,backup_bytes
 
-router=APIRouter(tags=['system-tools']);VERSION='2.2.0'
+router=APIRouter(tags=['system-tools']);VERSION='2.3.0'
 @router.get('/api/system/info')
-def system_info():return {'version':VERSION,'environment':CONFIG.environment,'database':str(DB_PATH),'database_exists':DB_PATH.exists(),'python':platform.python_version(),'platform':platform.system(),'hostname':platform.node(),'encryption':encryption_status(),'authentication':True,'schema':'2.2'}
+def system_info():return {'version':VERSION,'environment':CONFIG.environment,'database':str(DB_PATH),'database_exists':DB_PATH.exists(),'python':platform.python_version(),'platform':platform.system(),'hostname':platform.node(),'encryption':encryption_status(),'authentication':True,'schema':'2.3'}
 @router.get('/api/system/monitoring-status')
 def monitoring_status():return status()
 @router.post('/api/system/retention/apply')
@@ -40,10 +40,10 @@ async def system_restore(request:Request):
 def export_csv(dataset:str,hours:int=Query(168,ge=1,le=8760)):
  tables={'speedtests':'speedtest_history','ping':'ping_history','gateway':'gateway_history','wifi':'wifi_history','ups':'ups_history','incidents':'incidents'};table=tables.get(dataset)
  if not table:return JSONResponse({'detail':'Unknown dataset'},status_code=404)
- con=connect()
+ cutoff=(datetime.now(timezone.utc)-timedelta(hours=hours)).isoformat();con=connect()
  try:
-  if table=='incidents':rows=con.execute("SELECT * FROM incidents WHERE datetime(started_at)>=datetime('now',?) ORDER BY datetime(started_at)",(f'-{hours} hours',)).fetchall()
-  else:rows=con.execute(f"SELECT * FROM {table} WHERE datetime(ts)>=datetime('now',?) ORDER BY datetime(ts)",(f'-{hours} hours',)).fetchall()
+  if table=='incidents':rows=con.execute("SELECT * FROM incidents WHERE julianday(started_at)>=julianday(?) ORDER BY julianday(started_at)",(cutoff,)).fetchall()
+  else:rows=con.execute(f"SELECT * FROM {table} WHERE julianday(ts)>=julianday(?) ORDER BY julianday(ts)",(cutoff,)).fetchall()
   data=[dict(r) for r in rows]
  finally:con.close()
  out=io.StringIO()
@@ -60,4 +60,4 @@ async def incident_note(incident_id:int,request:Request):
  return {'ok':True}
 @router.get('/api/system/build-info')
 def build_info():
- cfg=all_settings();return {'version':VERSION,'schema':'2.2','update_channel':cfg.get('update_channel','stable'),'theme':cfg.get('theme','dark'),'accent':cfg.get('accent','green')}
+ cfg=all_settings();return {'version':VERSION,'schema':'2.3','update_channel':cfg.get('update_channel','stable'),'theme':cfg.get('theme','dark'),'accent':cfg.get('accent','green')}
