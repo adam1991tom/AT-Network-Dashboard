@@ -10,10 +10,23 @@
   <article class="card metric"><span>Gateway Memory</span><strong id="gateway_mem">—</strong><small id="gateway_mem_detail">UCG / UniFi gateway</small></article>
   <article class="card metric"><span>Wi-Fi</span><strong id="wifi_state">—</strong><small id="wifi_detail">Waiting for radio data</small></article>
 </section>
-<section class="card dashboard-card monitoring-card">
-  <div class="panel-heading range-heading"><div><h2>ISP Speed & Internet Quality</h2><p>Download/upload speed tests plus continuous latency and packet-loss tracking.</p></div><div class="panel-actions"><button class="secondary-button compact-action" id="run_speedtest_button" type="button">Run Speed Test</button><span class="test-status" id="run_speedtest_status"></span><div class="range-buttons" data-range-group><button class="range-button active" data-hours="24">24h</button><button class="range-button" data-hours="168">7d</button><button class="range-button" data-hours="720">30d</button><button class="range-button" data-hours="2160">90d</button></div></div></div>
-  <div class="chart-legend" id="speed_legend"></div><div class="chart-wrap"><canvas class="history-chart interactive-chart" id="speed_chart" data-chart-height="340"></canvas><div class="chart-tooltip" id="speed_chart_tooltip"></div></div><div class="empty-chart" id="speed_empty">No ISP monitoring data is stored in the selected range yet.</div>
+
+<section class="card dashboard-card monitoring-card isp-combined-card">
+  <div class="panel-heading range-heading">
+    <div><h2>ISP Speed & Internet Quality</h2><p>Speed tests and connection quality in one panel, separated for a cleaner view.</p></div>
+    <div class="panel-actions"><button class="secondary-button compact-action" id="run_speedtest_button" type="button">Run Speed Test</button><span class="test-status" id="run_speedtest_status"></span><div class="range-buttons" data-range-group><button class="range-button active" data-hours="24">24h</button><button class="range-button" data-hours="168">7d</button><button class="range-button" data-hours="720">30d</button><button class="range-button" data-hours="2160">90d</button></div></div>
+  </div>
+  <div class="chart-section-label">Speed Tests</div>
+  <div class="chart-legend" id="speed_legend"></div>
+  <div class="chart-wrap"><canvas class="history-chart interactive-chart" id="speed_chart" data-chart-height="260"></canvas><div class="chart-tooltip" id="speed_chart_tooltip"></div></div>
+  <div class="empty-chart" id="speed_empty">No speed-test data is stored in the selected range yet.</div>
+  <div class="chart-section-divider"></div>
+  <div class="chart-section-label">Latency & Packet Loss</div>
+  <div class="chart-legend" id="quality_legend"></div>
+  <div class="chart-wrap"><canvas class="history-chart interactive-chart" id="quality_chart" data-chart-height="190"></canvas><div class="chart-tooltip" id="quality_chart_tooltip"></div></div>
+  <div class="empty-chart" id="quality_empty">No internet-quality data is stored in the selected range yet.</div>
 </section>
+
 <section class="card dashboard-card monitoring-card"><div class="panel-heading"><div><h2>UniFi WAN Usage History</h2><p>Historical WAN receive/transmit usage retained by the UniFi controller.</p></div></div><div class="chart-legend" id="wan_legend"></div><div class="chart-wrap"><canvas class="history-chart interactive-chart" id="wan_chart" data-chart-height="260"></canvas><div class="chart-tooltip" id="wan_chart_tooltip"></div></div><div class="empty-chart" id="wan_empty">Import retained UniFi history from Settings → System to populate this graph.</div></section>
 <section class="card dashboard-card monitoring-card"><div class="panel-heading"><div><h2>UCG / UniFi Gateway System</h2><p>CPU, memory, temperature, WAN status and interface error tracking.</p></div></div><div class="chart-legend" id="gateway_legend"></div><div class="chart-wrap"><canvas class="history-chart interactive-chart" id="gateway_chart" data-chart-height="260"></canvas><div class="chart-tooltip" id="gateway_chart_tooltip"></div></div><div class="gateway-stats" id="gateway_stats"></div><div class="empty-chart" id="gateway_empty">No gateway system-stat samples are stored in the selected range yet.</div></section>
 <section class="card dashboard-card monitoring-card ups-panel"><div class="panel-heading"><div><h2>UPS / Power</h2><p>Live mains, battery and load information from NUTPI.</p></div></div><div class="ups-live-grid"><div><span>Input Voltage</span><strong id="ups_input">—</strong></div><div><span>Output Voltage</span><strong id="ups_output">—</strong></div><div><span>Battery Voltage</span><strong id="ups_battery">—</strong></div><div><span>Load</span><strong id="ups_load">—</strong></div><div><span>Runtime ETA</span><strong id="ups_runtime">—</strong></div><div><span>Status</span><strong id="ups_status">—</strong></div></div><div class="chart-legend" id="ups_legend"></div><div class="chart-wrap"><canvas class="history-chart interactive-chart" id="ups_chart" data-chart-height="220"></canvas><div class="chart-tooltip" id="ups_chart_tooltip"></div></div><div class="empty-chart" id="ups_empty">No UPS samples are stored in the selected range yet.</div></section>
