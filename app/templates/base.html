@@ -10,34 +10,22 @@
 <body>
   <div class="app-frame">
     <aside class="app-rail" aria-label="Primary navigation">
-      <a class="rail-brand" href="/dashboard" title="AT Network Dashboard">
-        <span class="rail-dot"></span>
-        <span class="rail-brand-text">AT</span>
-      </a>
+      <a class="rail-brand" href="/dashboard" title="AT Network Dashboard"><span class="rail-dot"></span><span class="rail-brand-text">AT</span></a>
       <nav class="rail-nav">
-        <a class="rail-link {% if page == 'dashboard' %}active{% endif %}" href="/dashboard" title="Dashboard"><span>◉</span><small>Home</small></a>
-        <a class="rail-link {% if page == 'incidents' %}active{% endif %}" href="/incidents" title="Incidents"><span>◇</span><small>Incidents</small></a>
-        <a class="rail-link {% if page == 'wifi' %}active{% endif %}" href="/wifi" title="Wi-Fi"><span>⌁</span><small>Wi-Fi</small></a>
-        <a class="rail-link {% if page == 'reports' %}active{% endif %}" href="/reports" title="Reports"><span>▥</span><small>Reports</small></a>
+        <a class="rail-link {% if page == 'dashboard' %}active{% endif %}" href="/dashboard" title="Dashboard" aria-label="Dashboard"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/></svg><small>Dashboard</small></a>
+        <a class="rail-link {% if page == 'incidents' %}active{% endif %}" href="/incidents" title="Incidents" aria-label="Incidents"><svg viewBox="0 0 24 24"><path d="M12 3 2.8 19h18.4L12 3Z"/><path d="M12 8v5"/><circle cx="12" cy="16.5" r=".8"/></svg><small>Incidents</small></a>
+        <a class="rail-link {% if page == 'wifi' %}active{% endif %}" href="/wifi" title="Wi-Fi" aria-label="Wi-Fi"><svg viewBox="0 0 24 24"><path d="M3 9a13 13 0 0 1 18 0"/><path d="M6 12a9 9 0 0 1 12 0"/><path d="M9 15a5 5 0 0 1 6 0"/><circle cx="12" cy="18" r="1"/></svg><small>Wi-Fi</small></a>
+        <a class="rail-link {% if page == 'reports' %}active{% endif %}" href="/reports" title="Reports" aria-label="Reports"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><small>Reports</small></a>
       </nav>
       <nav class="rail-nav rail-nav-bottom">
-        <a class="rail-link {% if page == 'settings' %}active{% endif %}" href="/settings" title="Settings"><span>⚙</span><small>Settings</small></a>
+        <a class="rail-link {% if page == 'settings' %}active{% endif %}" href="/settings" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1A7 7 0 0 0 14.8 6l-.3-2.6h-4L10.2 6a7 7 0 0 0-1.7 1.1l-2.4-1-2 3.4L6.1 11a7 7 0 0 0 0 2L4 14.5l2 3.4 2.4-1a7 7 0 0 0 1.7 1.1l.3 2.6h4l.3-2.6a7 7 0 0 0 1.7-1.1l2.4 1 2-3.4-2-1.5a7 7 0 0 0 .2-1Z"/></svg><small>Settings</small></a>
       </nav>
     </aside>
 
     <div class="app-workspace">
       <header class="topbar">
-        <div class="brand-wrap">
-          <div class="brand-line">
-            <span class="health-dot"></span>
-            <div class="brand">AT Network Dashboard</div>
-          </div>
-          <div class="subtitle">Network · ISP · Wi-Fi · Power</div>
-        </div>
-        <div class="topbar-context">
-          <span class="context-label">{{ title }}</span>
-          <span class="context-version">{{ version }}</span>
-        </div>
+        <div class="brand-wrap"><div class="brand-line"><span class="health-dot"></span><div class="brand">AT Network Dashboard</div></div><div class="subtitle">Network · ISP · Wi-Fi · Power</div></div>
+        <div class="topbar-context"><span class="context-label">{{ title }}</span><span class="context-version">{{ version }}</span></div>
         <nav class="nav">
           <a class="{% if page == 'dashboard' %}active{% endif %}" href="/dashboard">Dashboard</a>
           <a class="{% if page == 'incidents' %}active{% endif %}" href="/incidents">Incidents</a>
@@ -46,11 +34,7 @@
           <a class="{% if page == 'settings' %}active{% endif %}" href="/settings">Settings</a>
         </nav>
       </header>
-
-      <main class="page-shell">
-        {% block content %}{% endblock %}
-      </main>
-
+      <main class="page-shell">{% block content %}{% endblock %}</main>
       <footer class="footer">AT Network Dashboard {{ version }}</footer>
     </div>
   </div>
