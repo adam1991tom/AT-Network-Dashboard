@@ -72,60 +72,45 @@ def run_forever() -> None:
             now = datetime.now(timezone.utc)
 
             if not enabled:
-                _set_runtime_state(
-                    speedtest_auto_state="disabled",
-                    speedtest_next_auto_at="",
-                )
+                _set_runtime_state(speedtest_auto_state="disabled", speedtest_next_auto_at="", speedtest_auto_first_due_at="")
                 time.sleep(POLL_SECONDS)
                 continue
 
             if not isp_enabled or not unifi_enabled:
-                _set_runtime_state(
-                    speedtest_auto_state="waiting for ISP/UniFi to be enabled",
-                    speedtest_next_auto_at="",
-                )
+                _set_runtime_state(speedtest_auto_state="waiting for ISP/UniFi to be enabled", speedtest_next_auto_at="", speedtest_auto_first_due_at="")
                 time.sleep(POLL_SECONDS)
                 continue
 
             url = str(cfg.get("unifi_url") or "").strip()
             api_key = get_secret("unifi_api_key") or ""
             if not url or not api_key:
-                _set_runtime_state(
-                    speedtest_auto_state="waiting for UniFi configuration",
-                    speedtest_next_auto_at="",
-                )
+                _set_runtime_state(speedtest_auto_state="waiting for UniFi configuration", speedtest_next_auto_at="", speedtest_auto_first_due_at="")
                 time.sleep(POLL_SECONDS)
                 continue
 
             last_started = _parse_iso(cfg.get("speedtest_last_auto_at"))
             if last_started is None:
-                next_due = now + timedelta(seconds=45)
-                _set_runtime_state(
-                    speedtest_auto_state="scheduled",
-                    speedtest_next_auto_at=next_due.isoformat(),
-                    speedtest_last_auto_at="",
-                )
-                time.sleep(POLL_SECONDS)
-                continue
+                first_due = _parse_iso(cfg.get("speedtest_auto_first_due_at"))
+                if first_due is None:
+                    first_due = now + timedelta(seconds=45)
+                    _set_runtime_state(
+                        speedtest_auto_state="scheduled",
+                        speedtest_auto_first_due_at=first_due.isoformat(),
+                        speedtest_next_auto_at=first_due.isoformat(),
+                    )
+                    time.sleep(POLL_SECONDS)
+                    continue
+                next_due = first_due
+            else:
+                next_due = last_started + timedelta(minutes=minutes)
 
-            next_due = last_started + timedelta(minutes=minutes)
             if now < next_due:
-                _set_runtime_state(
-                    speedtest_auto_state="scheduled",
-                    speedtest_next_auto_at=next_due.isoformat(),
-                )
+                _set_runtime_state(speedtest_auto_state="scheduled", speedtest_next_auto_at=next_due.isoformat())
                 time.sleep(POLL_SECONDS)
                 continue
 
-            _set_runtime_state(
-                speedtest_auto_state="starting",
-                speedtest_next_auto_at="",
-            )
-            client = UniFiClient(
-                url,
-                api_key,
-                str(cfg.get("unifi_verify_ssl") or "false").lower() == "true",
-            )
+            _set_runtime_state(speedtest_auto_state="starting", speedtest_next_auto_at="")
+            client = UniFiClient(url, api_key, str(cfg.get("unifi_verify_ssl") or "false").lower() == "true")
             result = client.run_speedtest()
             if result.get("ok"):
                 started_at = _iso_now()
@@ -133,6 +118,7 @@ def run_forever() -> None:
                 _set_runtime_state(
                     speedtest_last_auto_at=started_at,
                     speedtest_next_auto_at=_schedule_from(started_dt, minutes),
+                    speedtest_auto_first_due_at="",
                     speedtest_auto_state="started successfully",
                     speedtest_auto_last_message=result.get("message") or "UniFi speed test started",
                 )
@@ -142,16 +128,13 @@ def run_forever() -> None:
                 _set_runtime_state(
                     speedtest_auto_state="failed",
                     speedtest_next_auto_at=retry_at.isoformat(),
-                    speedtest_last_auto_at=now.isoformat(),
+                    speedtest_auto_first_due_at=retry_at.isoformat(),
                     speedtest_auto_last_message=result.get("message") or "Unable to start UniFi speed test",
                 )
                 print(f"auto-speedtest: start failed: {result.get('message')}")
         except Exception as exc:
             try:
-                _set_runtime_state(
-                    speedtest_auto_state="error",
-                    speedtest_auto_last_message=str(exc),
-                )
+                _set_runtime_state(speedtest_auto_state="error", speedtest_auto_last_message=str(exc))
             except Exception:
                 pass
             print(f"auto-speedtest: worker error: {exc}")
