@@ -1,9 +1,9 @@
 """Runtime fixes for UniFi speed-test timestamps.
 
-UniFi's speedtest-status object can contain both a status timestamp that changes
-while the same result remains published and a rundate that identifies the real
-test execution time.  AT Network Dashboard must key stored tests by rundate or
-it creates a new copy of the same speed-test result every monitoring cycle.
+UniFi's speedtest-status object can expose a changing status timestamp alongside
+an actual test run time.  Only the real run time is safe to use as a database
+identity.  Falling back to the status timestamp creates hundreds of duplicate
+rows for one real test.
 """
 from __future__ import annotations
 
@@ -15,13 +15,9 @@ _original_gateway_stats = UniFiClient._gateway_stats
 
 
 def _real_speedtest_epoch(speed: dict[str, Any]) -> int:
-    value = (
-        speed.get("rundate")
-        or speed.get("runDate")
-        or speed.get("time")
-        or speed.get("timestamp")
-        or 0
-    )
+    # Deliberately DO NOT use speed["timestamp"] here. On UniFi gateways that
+    # value can change while the same speed-test result remains published.
+    value = speed.get("rundate") or speed.get("runDate") or speed.get("run_date") or speed.get("last_run") or speed.get("time") or 0
     try:
         epoch = int(float(value))
     except (TypeError, ValueError):
@@ -36,9 +32,9 @@ def _gateway_stats_with_real_speedtest_time(self: UniFiClient, device: dict[str,
     raw = device.get("speedtest-status") if isinstance(device.get("speedtest-status"), dict) else {}
     current = result.get("speedtest") if isinstance(result.get("speedtest"), dict) else None
     if current and raw:
-        epoch = _real_speedtest_epoch(raw)
-        if epoch:
-            current["epoch_ms"] = epoch
+        # Zero means "do not persist this live result". The historical UniFi
+        # endpoint will still import it using its genuine run timestamp.
+        current["epoch_ms"] = _real_speedtest_epoch(raw)
     return result
 
 
