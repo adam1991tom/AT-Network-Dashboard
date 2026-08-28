@@ -4,7 +4,7 @@ import threading
 import time
 from typing import Any
 
-from app.database import connect
+from app.database import connect, write_transaction
 from app.integrations.nut import NutPiHttpClient
 from app.integrations.unifi import UniFiClient
 from app.settings_store import all_settings, get_secret
@@ -23,10 +23,14 @@ _worker_started = False
 _worker_lock = threading.Lock()
 _last_archive_sync = 0.0
 _last_speedtest_epoch = 0
+_monitor_state: dict[str, Any] = {"last_attempt": None, "last_success": None, "last_error": None, "consecutive_failures": 0}
+
+
+def monitor_state() -> dict[str, Any]:
+    return dict(_monitor_state)
 
 
 def _gather_archives(client: UniFiClient) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
-    """Fetch a small catch-up window without holding a SQLite transaction open."""
     try:
         speed = client.speedtest_history(2)
     except Exception as exc:
@@ -69,15 +73,10 @@ def _write_archives(con, speed_rows: list[dict[str, Any]], retained: dict[str, l
 
 
 def collect_once() -> None:
-    """Collect remotely first, then perform one short SQLite transaction.
-
-    Older builds inserted the ping row and then kept the write transaction open while
-    waiting on UPS and UniFi HTTP calls and archive downloads. That could block the UI,
-    speed-test sidecar and settings writes, causing the slow/glitchy/missing-data feel.
-    """
     global _last_archive_sync, _last_speedtest_epoch
     cfg = all_settings()
     ts = utc_now()
+    _monitor_state["last_attempt"] = ts
 
     ping_data: dict[str, Any] | None = None
     ups_data: dict[str, Any] | None = None
@@ -88,7 +87,7 @@ def collect_once() -> None:
     speed_archive: list[dict[str, Any]] = []
     retained_archive: dict[str, list[dict[str, Any]]] = {}
 
-    # Network I/O: no SQLite write connection is held during this phase.
+    # Remote work first: never hold SQLite while waiting on network I/O.
     if _bool(cfg.get("isp_enabled"), True):
         target = str(cfg.get("ping_target", "1.1.1.1")).strip() or "1.1.1.1"
         ping_data = ping_sample(target)
@@ -107,7 +106,8 @@ def collect_once() -> None:
                 "battery_voltage": _float(raw.get("battery.voltage")), "input_frequency": _float(raw.get("input.frequency")),
                 "runtime_seconds": runtime,
             }
-        except Exception:
+        except Exception as exc:
+            print(f"monitoring: UPS collection failed: {exc}")
             ups_data = {"connected": 0, "status": None}
 
     if _bool(cfg.get("unifi_enabled")):
@@ -134,9 +134,8 @@ def collect_once() -> None:
             except Exception as exc:
                 print(f"monitoring: UniFi collection failed: {exc}")
 
-    # Short write phase.
-    con = connect()
-    try:
+    def write_batch(con):
+        global _last_speedtest_epoch
         if ping_data:
             con.execute(
                 "INSERT INTO ping_history(ts,target,latency,packet_loss,online) VALUES (?,?,?,?,?)",
@@ -174,12 +173,9 @@ def collect_once() -> None:
             if speed_added or wan_added:
                 print(f"monitoring: catch-up +{speed_added} speed tests, +{wan_added} WAN buckets")
         _evaluate_incidents(con, cfg, ping_data, gateway_data, ups_data, radio_rows, speed_data)
-        con.commit()
-    except Exception:
-        con.rollback()
-        raise
-    finally:
-        con.close()
+
+    write_transaction(write_batch, attempts=10)
+    _monitor_state.update({"last_success": ts, "last_error": None, "consecutive_failures": 0})
 
 
 def _worker() -> None:
@@ -188,6 +184,8 @@ def _worker() -> None:
         try:
             collect_once()
         except Exception as exc:
+            _monitor_state["last_error"] = str(exc)
+            _monitor_state["consecutive_failures"] = int(_monitor_state.get("consecutive_failures") or 0) + 1
             print(f"monitoring collection failed: {exc}")
         elapsed = time.monotonic() - started
         time.sleep(max(5.0, 30.0 - elapsed))
@@ -198,5 +196,5 @@ def start_monitoring() -> None:
     with _worker_lock:
         if _worker_started:
             return
-        threading.Thread(target=_worker, name="at-network-monitor-v23", daemon=True).start()
+        threading.Thread(target=_worker, name="at-network-monitor-v321", daemon=True).start()
         _worker_started = True
