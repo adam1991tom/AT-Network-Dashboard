@@ -13,6 +13,21 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  at-network-speedtest:
+    build: .
+    container_name: at-network-dashboard-speedtest
+    restart: unless-stopped
+    depends_on:
+      - at-network-dashboard
+    command: ["python", "-m", "app.auto_speedtest"]
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+      - /etc/localtime:/etc/localtime:ro
+    security_opt:
+      - no-new-privileges:true
+
   at-network-updater:
     build:
       context: .
