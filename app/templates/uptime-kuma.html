@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% block content %}
+<section class="hero"><div><h1>Uptime Kuma</h1><p>Service and endpoint health from your existing Uptime Kuma instance.</p></div><span class="status-pill" id="kuma_state">LOADING</span></section>
+<section class="metric-grid dashboard-metrics">
+ <div class="card metric"><span>Total Monitors</span><strong id="kuma_total">—</strong><small>Published on status page</small></div>
+ <div class="card metric"><span>Up</span><strong id="kuma_up">—</strong><small>Healthy monitors</small></div>
+ <div class="card metric"><span>Down</span><strong id="kuma_down">—</strong><small>Failed monitors</small></div>
+ <div class="card metric"><span>Pending</span><strong id="kuma_pending">—</strong><small>Pending state</small></div>
+</section>
+<section class="card dashboard-card"><div class="panel-heading"><div><h2>Monitors</h2><p>Current heartbeat, response time and 24-hour uptime where Kuma provides it.</p></div><a class="secondary-button" id="kuma_open" href="#" target="_blank" rel="noopener">Open Uptime Kuma</a></div><div class="table-wrap"><table class="settings-table"><thead><tr><th>Monitor</th><th>Status</th><th>Response</th><th>24h Uptime</th><th>Last Heartbeat</th></tr></thead><tbody id="kuma_monitors"><tr><td colspan="5" class="muted">Loading…</td></tr></tbody></table></div></section>
+<script src="/static/uptime-kuma.js?v={{ version }}"></script>
+{% endblock %}
