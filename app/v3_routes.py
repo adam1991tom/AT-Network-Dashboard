@@ -15,102 +15,84 @@ router=APIRouter(tags=['v3'])
 templates=Environment(loader=FileSystemLoader(Path(__file__).resolve().parent/'templates'),autoescape=select_autoescape(['html','xml']))
 VERSION=APP_VERSION
 
-def _page(request:Request,name:str,page:str,title:str):
- return HTMLResponse(templates.get_template(name).render(request=request,version=VERSION,page=page,title=title))
-
+def _page(request:Request,name:str,page:str,title:str): return HTMLResponse(templates.get_template(name).render(request=request,version=VERSION,page=page,title=title))
 @router.get('/api/health')
 def v3_health():return {'status':'ok','version':VERSION,'environment':CONFIG.environment,'database':str(DB_PATH)}
 @router.get('/',response_class=HTMLResponse)
 @router.get('/dashboard',response_class=HTMLResponse)
 def v3_dashboard(request:Request):return _page(request,'dashboard.html','dashboard','Dashboard')
 @router.get('/isp',response_class=HTMLResponse)
-def isp_page(request:Request): return _page(request,'isp.html','isp','ISP')
+def isp_page(request:Request):return _page(request,'isp.html','isp','ISP')
 @router.get('/gateway',response_class=HTMLResponse)
-def gateway_page(request:Request): return _page(request,'gateway.html','gateway','Gateway')
+def gateway_page(request:Request):return _page(request,'gateway.html','gateway','Gateway')
 @router.get('/ups',response_class=HTMLResponse)
-def ups_page(request:Request): return _page(request,'ups.html','ups','UPS / Power')
+def ups_page(request:Request):return _page(request,'ups.html','ups','UPS / Power')
+@router.get('/uptime-kuma',response_class=HTMLResponse)
+def uptime_kuma_page(request:Request):return _page(request,'uptime-kuma.html','uptime-kuma','Uptime Kuma')
 
 @router.get('/api/isp/speedtest-sync/status')
 def speed_sync_status(days:int=Query(365,ge=1,le=730)):
- cfg=all_settings(); url=str(cfg.get('unifi_url') or '').strip(); key=get_secret('unifi_api_key') or ''
+ cfg=all_settings();url=str(cfg.get('unifi_url') or '').strip();key=get_secret('unifi_api_key') or ''
  if not url or not key:return JSONResponse({'ok':False,'message':'UniFi is not configured'},status_code=400)
  client=UniFiClient(url,key,str(cfg.get('unifi_verify_ssl') or 'false').lower()=='true')
  try:controller=client.speedtest_history(days)
  except Exception as exc:return JSONResponse({'ok':False,'message':str(exc)},status_code=502)
- epochs=[int(r.get('epoch_ms') or 0) for r in controller if int(r.get('epoch_ms') or 0)>0]
- con=connect()
+ epochs=[int(r.get('epoch_ms') or 0) for r in controller if int(r.get('epoch_ms') or 0)>0];con=connect()
  try:db={int(r[0]) for r in con.execute('SELECT epoch_ms FROM speedtest_history WHERE epoch_ms IS NOT NULL').fetchall()}
  finally:con.close()
- missing=[e for e in epochs if e not in db]
- return {'ok':True,'controller_count':len(epochs),'dashboard_count':len(db),'missing_count':len(missing),'missing_epochs':missing[:100],'oldest':controller[0].get('ts') if controller else None,'newest':controller[-1].get('ts') if controller else None}
-
+ missing=[e for e in epochs if e not in db];return {'ok':True,'controller_count':len(epochs),'dashboard_count':len(db),'missing_count':len(missing),'missing_epochs':missing[:100],'oldest':controller[0].get('ts') if controller else None,'newest':controller[-1].get('ts') if controller else None}
 @router.post('/api/isp/speedtest-sync')
 async def speed_sync(request:Request):
- p=await request.json(); days=max(1,min(730,int(p.get('days') or 365))); rebuild=bool(p.get('rebuild'))
- cfg=all_settings(); url=str(cfg.get('unifi_url') or '').strip(); key=get_secret('unifi_api_key') or ''
+ p=await request.json();days=max(1,min(730,int(p.get('days') or 365)));rebuild=bool(p.get('rebuild'));cfg=all_settings();url=str(cfg.get('unifi_url') or '').strip();key=get_secret('unifi_api_key') or ''
  if not url or not key:return JSONResponse({'ok':False,'message':'UniFi is not configured'},status_code=400)
  client=UniFiClient(url,key,str(cfg.get('unifi_verify_ssl') or 'false').lower()=='true')
  try:rows=client.speedtest_history(days)
  except Exception as exc:return JSONResponse({'ok':False,'message':str(exc)},status_code=502)
- con=connect(); inserted=0
+ con=connect();inserted=0
  try:
   con.execute('BEGIN IMMEDIATE')
   if rebuild:con.execute("DELETE FROM speedtest_history WHERE source IN ('unifi-history','unifi-live','unifi')")
   for r in rows:
    epoch=int(r.get('epoch_ms') or 0)
    if not epoch:continue
-   ts=str(r.get('ts') or datetime.fromtimestamp(epoch/1000,tz=timezone.utc).isoformat())
-   cur=con.execute('INSERT OR IGNORE INTO speedtest_history(ts,epoch_ms,download,upload,latency,interface_name,wan_group,source) VALUES (?,?,?,?,?,?,?,?)',(ts,epoch,r.get('download'),r.get('upload'),r.get('latency'),r.get('interface_name'),r.get('wan_group') or 'WAN','unifi-history'))
-   inserted+=max(cur.rowcount,0)
-  con.commit(); total=con.execute('SELECT COUNT(*) FROM speedtest_history').fetchone()[0]
+   ts=str(r.get('ts') or datetime.fromtimestamp(epoch/1000,tz=timezone.utc).isoformat());cur=con.execute('INSERT OR IGNORE INTO speedtest_history(ts,epoch_ms,download,upload,latency,interface_name,wan_group,source) VALUES (?,?,?,?,?,?,?,?)',(ts,epoch,r.get('download'),r.get('upload'),r.get('latency'),r.get('interface_name'),r.get('wan_group') or 'WAN','unifi-history'));inserted+=max(cur.rowcount,0)
+  con.commit();total=con.execute('SELECT COUNT(*) FROM speedtest_history').fetchone()[0]
  finally:con.close()
  return {'ok':True,'inserted':inserted,'controller_count':len(rows),'dashboard_count':total,'message':f'Synchronised {inserted} missing speed tests'}
-
 @router.get('/api/gateway/live-extra')
 def gateway_extra():
- cfg=all_settings(); url=str(cfg.get('unifi_url') or '').strip(); key=get_secret('unifi_api_key') or ''
+ cfg=all_settings();url=str(cfg.get('unifi_url') or '').strip();key=get_secret('unifi_api_key') or ''
  if not url or not key:return JSONResponse({'ok':False,'message':'UniFi is not configured'},status_code=400)
- try:
-  snap=UniFiClient(url,key,str(cfg.get('unifi_verify_ssl') or 'false').lower()=='true').snapshot(); return {'ok':True,'gateway':snap.get('gateway') or {},'fetched_at':datetime.now(timezone.utc).isoformat()}
+ try:snap=UniFiClient(url,key,str(cfg.get('unifi_verify_ssl') or 'false').lower()=='true').snapshot();return {'ok':True,'gateway':snap.get('gateway') or {},'fetched_at':datetime.now(timezone.utc).isoformat()}
  except Exception as exc:return JSONResponse({'ok':False,'message':str(exc)},status_code=502)
-
 @router.get('/api/unifi/diagnostics')
 def unifi_diagnostics():
- cfg=all_settings(); url=str(cfg.get('unifi_url') or '').strip(); key=get_secret('unifi_api_key') or ''
+ cfg=all_settings();url=str(cfg.get('unifi_url') or '').strip();key=get_secret('unifi_api_key') or ''
  if not url or not key:return JSONResponse({'ok':False,'message':'UniFi is not configured'},status_code=400)
  client=UniFiClient(url,key,str(cfg.get('unifi_verify_ssl') or 'false').lower()=='true')
- try:diag=client.diagnostics(); snap=client.snapshot()
+ try:diag=client.diagnostics();snap=client.snapshot()
  except Exception as exc:return JSONResponse({'ok':False,'message':str(exc)},status_code=502)
- con=connect(); latest={}
+ con=connect();latest={}
  try:
   for table in ('gateway_history','wifi_history','ping_history','ups_history','speedtest_history','unifi_wan_history','unifi_ap_traffic_history'):
    row=con.execute(f'SELECT COUNT(*) c, MAX(ts) newest FROM {table}').fetchone();latest[table]={'count':row['c'],'newest':row['newest']}
  finally:con.close()
  return {'ok':diag.get('ok',False),'controller':diag,'gateway':snap.get('gateway') or {},'database':latest,'collector':monitor_state(),'checked_at':datetime.now(timezone.utc).isoformat()}
-
 @router.get('/api/system/source-health')
 def source_health():
- now=datetime.now(timezone.utc); con=connect(); sources={}
+ now=datetime.now(timezone.utc);con=connect();sources={}
  try:
   for name,table in [('gateway','gateway_history'),('wifi','wifi_history'),('ping','ping_history'),('ups','ups_history'),('speedtest','speedtest_history')]:
-   row=con.execute(f'SELECT MAX(ts) newest FROM {table}').fetchone(); newest=row['newest'] if row else None; age=None
+   row=con.execute(f'SELECT MAX(ts) newest FROM {table}').fetchone();newest=row['newest'] if row else None;age=None
    if newest:
-    try:
-     d=datetime.fromisoformat(str(newest).replace('Z','+00:00'));d=d if d.tzinfo else d.replace(tzinfo=timezone.utc);age=max(0,(now-d.astimezone(timezone.utc)).total_seconds())
+    try:d=datetime.fromisoformat(str(newest).replace('Z','+00:00'));d=d if d.tzinfo else d.replace(tzinfo=timezone.utc);age=max(0,(now-d.astimezone(timezone.utc)).total_seconds())
     except Exception:pass
    sources[name]={'newest':newest,'age_seconds':age,'stale':age is None or age>180}
  finally:con.close()
  return {'ok':not any(v['stale'] for k,v in sources.items() if k!='speedtest'),'sources':sources,'collector':monitor_state(),'checked_at':now.isoformat()}
-
 @router.get('/api/dashboard/summary')
 def dashboard_summary():
  con=connect()
  try:
-  active=con.execute('SELECT COUNT(*) FROM incidents WHERE active=1').fetchone()[0]
-  speed=con.execute('SELECT ts,download,upload,latency FROM speedtest_history ORDER BY epoch_ms DESC LIMIT 1').fetchone()
-  gateway=con.execute('SELECT ts,cpu,memory,temperature,wan_up FROM gateway_history ORDER BY id DESC LIMIT 1').fetchone()
-  ups=con.execute('SELECT ts,connected,status,load_pct,input_voltage FROM ups_history ORDER BY id DESC LIMIT 1').fetchone()
-  wifi=con.execute("SELECT MAX(retries),COUNT(DISTINCT COALESCE(device_id,'')||band) FROM wifi_history WHERE datetime(ts)>=datetime('now','-5 minutes')").fetchone()
-  ping=con.execute('SELECT ts,latency,packet_loss,online FROM ping_history ORDER BY id DESC LIMIT 1').fetchone()
-  return {'active_incidents':active,'speed':dict(speed) if speed else None,'gateway':dict(gateway) if gateway else None,'ups':dict(ups) if ups else None,'wifi':{'worst_retries':wifi[0] or 0,'radios':wifi[1] or 0},'ping':dict(ping) if ping else None}
+  active=con.execute('SELECT COUNT(*) FROM incidents WHERE active=1').fetchone()[0];speed=con.execute('SELECT ts,download,upload,latency FROM speedtest_history ORDER BY epoch_ms DESC LIMIT 1').fetchone();gateway=con.execute('SELECT ts,cpu,memory,temperature,wan_up FROM gateway_history ORDER BY id DESC LIMIT 1').fetchone();ups=con.execute('SELECT ts,connected,status,load_pct,input_voltage FROM ups_history ORDER BY id DESC LIMIT 1').fetchone();wifi=con.execute("SELECT MAX(retries),COUNT(DISTINCT COALESCE(device_id,'')||band) FROM wifi_history WHERE datetime(ts)>=datetime('now','-5 minutes')").fetchone();ping=con.execute('SELECT ts,latency,packet_loss,online FROM ping_history ORDER BY id DESC LIMIT 1').fetchone();return {'active_incidents':active,'speed':dict(speed) if speed else None,'gateway':dict(gateway) if gateway else None,'ups':dict(ups) if ups else None,'wifi':{'worst_retries':wifi[0] or 0,'radios':wifi[1] or 0},'ping':dict(ping) if ping else None}
  finally:con.close()
