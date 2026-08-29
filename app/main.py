@@ -16,6 +16,7 @@ from app.dev14_routes import router as dev14_router
 from app.integrations.discord import DiscordNotifier
 from app.integrations.nut import NutPiHttpClient
 from app.integrations.unifi import UniFiClient
+from app.integrations.uptime_kuma import UptimeKumaClient
 from app.monitoring_v23 import start_monitoring
 from app.monitoring_routes import router as monitoring_router
 from app.settings_store import all_settings, encryption_status, get_secret, set_secret, set_settings
@@ -48,6 +49,12 @@ def _unifi_from_payload(payload: dict) -> tuple[UniFiClient | None, dict | None]
     if not api_key:return None,{"ok":False,"message":"Enter or save a UniFi API key"}
     return UniFiClient(url,api_key,verify_ssl),None
 
+def _kuma_from_payload(payload: dict) -> tuple[UptimeKumaClient | None, dict | None]:
+    cfg=all_settings(); url=str(payload.get("uptime_kuma_url") or cfg.get("uptime_kuma_url") or "").strip(); slug=str(payload.get("uptime_kuma_status_slug") or cfg.get("uptime_kuma_status_slug") or "").strip(); key=str(payload.get("uptime_kuma_api_key") or "").strip() or (get_secret("uptime_kuma_api_key") or ""); verify=_bool(payload.get("uptime_kuma_verify_ssl",cfg.get("uptime_kuma_verify_ssl")),False)
+    if not url:return None,{"ok":False,"message":"Enter the Uptime Kuma URL / IP"}
+    if not slug:return None,{"ok":False,"message":"Enter the Uptime Kuma status-page slug"}
+    return UptimeKumaClient(url,slug,key,verify),None
+
 @app.on_event("startup")
 def startup() -> None: initialise(); start_monitoring()
 
@@ -57,9 +64,7 @@ async def authentication(request: Request, call_next):
     if public:
         response=await call_next(request)
         if path.startswith("/static/"):
-            response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
-            response.headers["Pragma"]="no-cache"
-            response.headers["Expires"]="0"
+            response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0";response.headers["Pragma"]="no-cache";response.headers["Expires"]="0"
         return response
     if not has_admin():
         if path.startswith("/api/"):return JSONResponse({"detail":"Administrator setup required"},status_code=401)
@@ -105,11 +110,21 @@ def api_settings()->dict:return all_settings()
 @app.post("/api/settings")
 async def api_save_settings(request:Request)->dict:
     payload=await request.json();set_settings(payload)
-    if str(payload.get("unifi_api_key","")).strip():set_secret("unifi_api_key",str(payload["unifi_api_key"]).strip())
-    if str(payload.get("discord_webhook","")).strip():set_secret("discord_webhook",str(payload["discord_webhook"]).strip())
+    for key in ("unifi_api_key","discord_webhook","uptime_kuma_api_key"):
+        if str(payload.get(key,"")).strip():set_secret(key,str(payload[key]).strip())
     set_settings({"setup_complete":"true"});return {"ok":True,"settings":all_settings()}
 @app.post("/api/settings/test/unifi")
 async def api_test_unifi(request:Request)->dict:payload=await request.json();client,error=_unifi_from_payload(payload);return error or client.test_connection()
+@app.post("/api/settings/test/uptime-kuma")
+async def api_test_uptime_kuma(request:Request)->dict:payload=await request.json();client,error=_kuma_from_payload(payload);return error or client.test_connection()
+@app.get("/api/uptime-kuma/summary")
+def api_uptime_kuma_summary()->dict:
+    cfg=all_settings()
+    if not _bool(cfg.get("uptime_kuma_enabled"),False):return {"ok":False,"enabled":False,"message":"Uptime Kuma integration is disabled"}
+    client,error=_kuma_from_payload({})
+    if error:return {**error,"enabled":True}
+    try:return {**client.snapshot(),"enabled":True,"open_url":str(cfg.get("uptime_kuma_url") or "").rstrip("/")}
+    except Exception as exc:return {"ok":False,"enabled":True,"message":str(exc),"open_url":str(cfg.get("uptime_kuma_url") or "").rstrip("/")}
 @app.post("/api/settings/test/speedtest")
 async def api_test_speedtest(request:Request)->dict:payload=await request.json();client,error=_unifi_from_payload(payload);return error or client.run_speedtest()
 @app.post("/api/settings/test/unifi-history")
