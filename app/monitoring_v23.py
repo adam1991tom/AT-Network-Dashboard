@@ -44,9 +44,10 @@ def _gather_archives(client: UniFiClient) -> tuple[list[dict[str, Any]], dict[st
     return speed or [], retained or {}
 
 
-def _write_archives(con, speed_rows: list[dict[str, Any]], retained: dict[str, list[dict[str, Any]]]) -> tuple[int, int]:
+def _write_archives(con, speed_rows: list[dict[str, Any]], retained: dict[str, list[dict[str, Any]]]) -> tuple[int, int, int]:
     speed_added = 0
     wan_added = 0
+    ap_added = 0
     for row in speed_rows:
         if _store_speedtest(con, row, "unifi-history"):
             speed_added += 1
@@ -69,7 +70,21 @@ def _write_archives(con, speed_rows: list[dict[str, Any]], retained: dict[str, l
                 (ts, epoch_ms, bucket, scope, object_id, row.get("num_sta"), row.get("wan-rx_bytes"), row.get("wan-tx_bytes")),
             )
             wan_added += max(cur.rowcount, 0)
-    return speed_added, wan_added
+    for row in retained.get("ap_hourly", []):
+        try:
+            epoch_ms = int(float(row.get("time")))
+        except (TypeError, ValueError):
+            continue
+        ts = str(row.get("datetime") or "").strip()
+        device_id = str(row.get("ap") or row.get("oid") or "").strip()
+        if not ts or not device_id:
+            continue
+        cur = con.execute(
+            "INSERT OR IGNORE INTO unifi_ap_traffic_history(ts,epoch_ms,device_id,clients,bytes,rx_bytes,tx_bytes) VALUES (?,?,?,?,?,?,?)",
+            (ts, epoch_ms, device_id, row.get("num_sta"), row.get("bytes"), row.get("rx_bytes"), row.get("tx_bytes")),
+        )
+        ap_added += max(cur.rowcount, 0)
+    return speed_added, wan_added, ap_added
 
 
 def collect_once() -> None:
@@ -169,9 +184,9 @@ def collect_once() -> None:
                 (ts, row["device_id"], row["ap_name"], row["band"], row["channel"], row["width"], row["retries"], row["utilization"], row["clients"], row["satisfaction"], row["tx_power"]),
             )
         if speed_archive or retained_archive:
-            speed_added, wan_added = _write_archives(con, speed_archive, retained_archive)
-            if speed_added or wan_added:
-                print(f"monitoring: catch-up +{speed_added} speed tests, +{wan_added} WAN buckets")
+            speed_added, wan_added, ap_added = _write_archives(con, speed_archive, retained_archive)
+            if speed_added or wan_added or ap_added:
+                print(f"monitoring: catch-up +{speed_added} speed tests, +{wan_added} WAN buckets, +{ap_added} AP buckets")
         _evaluate_incidents(con, cfg, ping_data, gateway_data, ups_data, radio_rows, speed_data)
 
     write_transaction(write_batch, attempts=10)
@@ -196,5 +211,5 @@ def start_monitoring() -> None:
     with _worker_lock:
         if _worker_started:
             return
-        threading.Thread(target=_worker, name="at-network-monitor-v321", daemon=True).start()
+        threading.Thread(target=_worker, name="at-network-monitor-v331", daemon=True).start()
         _worker_started = True
