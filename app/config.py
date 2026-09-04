@@ -15,6 +15,7 @@ class AppConfig:
     master_key: str
     session_secret: str
     first_run_setup: bool
+    force_https: bool
 
 
 def _as_bool(value: str | None, default: bool = False) -> bool:
@@ -36,6 +37,7 @@ def load_config() -> AppConfig:
         master_key=os.getenv("AT_MASTER_KEY", ""),
         session_secret=os.getenv("SESSION_SECRET", ""),
         first_run_setup=_as_bool(os.getenv("FIRST_RUN_SETUP"), True),
+        force_https=_as_bool(os.getenv("FORCE_HTTPS"), False),
     )
 
 

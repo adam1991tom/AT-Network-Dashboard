@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hmac
 import platform
+import secrets
 import subprocess
 from pathlib import Path
 
@@ -19,6 +21,7 @@ from app.integrations.unifi import UniFiClient
 from app.integrations.uptime_kuma import UptimeKumaClient
 from app.monitoring_v23 import start_monitoring
 from app.monitoring_routes import router as monitoring_router
+from app.security import is_locked, record_failure, reset as reset_login_attempts
 from app.settings_store import all_settings, encryption_status, get_secret, set_secret, set_settings
 from app.updater import check_updates, request_update, update_state
 from app.version import APP_VERSION
@@ -58,6 +61,23 @@ def _kuma_from_payload(payload: dict) -> tuple[UptimeKumaClient | None, dict | N
 @app.on_event("startup")
 def startup() -> None: initialise(); start_monitoring()
 
+CSRF_COOKIE_NAME = "at_csrf"
+_CSRF_EXEMPT_PATHS = {"/api/health", "/login", "/setup-admin"}
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def _origin_allowed(request: Request) -> bool:
+    origin = request.headers.get("origin")
+    if not origin:
+        return True  # not all clients send Origin; treated as defense-in-depth only
+    try:
+        allowed_host = request.url.netloc
+        origin_host = origin.split("://", 1)[-1]
+        return origin_host == allowed_host
+    except Exception:
+        return False
+
+
 @app.middleware("http")
 async def authentication(request: Request, call_next):
     path=request.url.path; public=path.startswith("/static/") or path in {"/api/health","/login","/setup-admin"}
@@ -73,6 +93,13 @@ async def authentication(request: Request, call_next):
     if not user:
         if path.startswith("/api/"):return JSONResponse({"detail":"Authentication required"},status_code=401)
         return RedirectResponse("/login",status_code=303)
+    if request.method not in _SAFE_METHODS and path not in _CSRF_EXEMPT_PATHS:
+        if not _origin_allowed(request):
+            return JSONResponse({"detail":"Origin not allowed"},status_code=403)
+        cookie_token=request.cookies.get(CSRF_COOKIE_NAME)
+        header_token=request.headers.get("x-csrf-token")
+        if not cookie_token or not header_token or not hmac.compare_digest(cookie_token,header_token):
+            return JSONResponse({"detail":"CSRF token missing or invalid"},status_code=403)
     request.state.user=user; return await call_next(request)
 
 @app.get("/api/health")
@@ -94,11 +121,21 @@ def login_page(request:Request):
     return HTMLResponse(templates.get_template("login.html").render(request=request,version=VERSION))
 @app.post("/login")
 async def login_api(request:Request):
-    data=await request.json();cfg=all_settings();token=login(str(data.get("username","")),str(data.get("password","")),int(float(cfg.get("session_hours") or 8)))
-    if not token:return JSONResponse({"ok":False,"message":"Invalid username or password"},status_code=401)
-    response=JSONResponse({"ok":True});response.set_cookie(COOKIE_NAME,token,httponly=True,samesite="lax",secure=False,max_age=int(float(cfg.get("session_hours") or 8))*3600);return response
+    data=await request.json();username=str(data.get("username",""));ip=request.client.host if request.client else "unknown"
+    if is_locked(ip,username):
+        return JSONResponse({"ok":False,"message":"Too many attempts. Try again later."},status_code=429)
+    cfg=all_settings();token=login(username,str(data.get("password","")),int(float(cfg.get("session_hours") or 8)))
+    if not token:
+        record_failure(ip,username)
+        return JSONResponse({"ok":False,"message":"Invalid username or password"},status_code=401)
+    reset_login_attempts(ip,username)
+    max_age=int(float(cfg.get("session_hours") or 8))*3600
+    response=JSONResponse({"ok":True})
+    response.set_cookie(COOKIE_NAME,token,httponly=True,samesite="lax",secure=CONFIG.force_https,max_age=max_age)
+    response.set_cookie(CSRF_COOKIE_NAME,secrets.token_urlsafe(32),httponly=False,samesite="lax",secure=CONFIG.force_https,max_age=max_age)
+    return response
 @app.post("/logout")
-def logout_api(request:Request):logout(request.cookies.get(COOKIE_NAME));response=JSONResponse({"ok":True});response.delete_cookie(COOKIE_NAME);return response
+def logout_api(request:Request):logout(request.cookies.get(COOKIE_NAME));response=JSONResponse({"ok":True});response.delete_cookie(COOKIE_NAME);response.delete_cookie(CSRF_COOKIE_NAME);return response
 @app.post("/api/security/change-password")
 async def api_change_password(request:Request):
     data=await request.json();ok,message=change_password(int(request.state.user["id"]),str(data.get("current_password","")),str(data.get("new_password","")))
