@@ -1,1 +1,60 @@
-(()=>{const $=id=>document.getElementById(id);const f=(v,s='',d=1)=>Number.isFinite(Number(v))?`${Number(v).toFixed(d)}${s}`:'—';async function load(){try{const r=await fetch('/api/dashboard/summary',{cache:'no-store'});if(r.status===401){location.href='/login';return}const d=await r.json(),p=d.ping||{},s=d.speed||{},g=d.gateway||{},u=d.ups||{},w=d.wifi||{};$('ov_internet').textContent=p.online?'ONLINE':'OFFLINE';$('ov_internet').className=p.online?'state-good':'state-bad';$('ov_internet_detail').textContent=`${f(p.latency,' ms')} · ${f(p.packet_loss,'%')} loss`;$('ov_speed').textContent=s.download!=null?`${Math.round(s.download)} ↓`:'—';$('ov_speed_detail').textContent=s.upload!=null?`${Math.round(s.upload)} Mbps ↑ · ${f(s.latency,' ms')}`:'No stored test';$('ov_gateway').textContent=g.wan_up?'HEALTHY':'WAN DOWN';$('ov_gateway').className=g.wan_up?'state-good':'state-bad';$('ov_gateway_detail').textContent=`CPU ${f(g.cpu,'%')} · RAM ${f(g.memory,'%')} · ${f(g.temperature,' °C')}`;const worst=Number(w.worst_retries||0);$('ov_wifi').textContent=worst>=40?'ATTENTION':worst>=30?'WATCH':'HEALTHY';$('ov_wifi').className=worst>=40?'state-bad':worst>=30?'state-warn':'state-good';$('ov_wifi_detail').textContent=`Worst retries ${worst.toFixed(1)}% · ${w.radios||0} radios`;const mains=String(u.status||'').includes('OL');$('ov_ups').textContent=u.connected?(mains?'ON MAINS':'ON BATTERY'):'DISCONNECTED';$('ov_ups').className=u.connected&&mains?'state-good':'state-bad';$('ov_ups_detail').textContent=`${f(u.load_pct,'%')} load · ${f(u.input_voltage,' V')}`;$('ov_incidents').textContent=d.active_incidents||0;$('ov_incidents').className=d.active_incidents?'state-warn':'state-good';$('overview_state').textContent=d.active_incidents?'ATTENTION':'HEALTHY';$('overview_detail').textContent=`Internet ${p.online?'online':'offline'} · Latest speed ${s.download?Math.round(s.download)+'/'+Math.round(s.upload||0)+' Mbps':'—'} · Gateway CPU ${f(g.cpu,'%')} · Wi-Fi worst retries ${worst.toFixed(1)}% · UPS ${u.status||'—'}`;}catch(e){$('overview_state').textContent='ERROR';$('overview_detail').textContent=e.message}}load();setInterval(load,30000)})();
+(()=>{
+const $=id=>document.getElementById(id);
+const f=(v,s='',d=1)=>Number.isFinite(Number(v))?`${Number(v).toFixed(d)}${s}`:'—';
+const CARDS=['internet','speed','gateway','wifi','ups'];
+
+function setCard(name,state,text,detail){
+  const el=$(`ov_${name}`),detailEl=$(`ov_${name}_detail`);
+  if(!el)return;
+  el.textContent=text;
+  el.className=`state-${state}`;
+  el.closest('.metric')?.classList.remove('severity-warning','severity-major','severity-critical','severity-disabled');
+  if(state==='bad')el.closest('.metric')?.classList.add('severity-critical');
+  if(detailEl&&detail!==undefined)detailEl.textContent=detail;
+}
+
+function setAllError(message){
+  for(const name of CARDS)setCard(name,'bad','ERROR',message||'Could not reach the dashboard API');
+  $('ov_incidents').textContent='—';$('ov_incidents').className='state-bad';
+  $('overview_state').textContent='ERROR';
+  $('overview_detail').textContent=message||'Could not reach the dashboard API';
+}
+
+async function load(){
+  let response;
+  try{
+    response=await fetch('/api/dashboard/summary',{cache:'no-store'});
+  }catch(e){
+    setAllError(e.message||'Network error');
+    return;
+  }
+  if(response.status===401){location.href='/login';return}
+  if(!response.ok){setAllError(`API returned ${response.status}`);return}
+  let d;
+  try{d=await response.json()}catch(e){setAllError('Invalid response from API');return}
+
+  const p=d.ping||{},s=d.speed,g=d.gateway,u=d.ups,w=d.wifi||{};
+
+  if(p.online===undefined){setCard('internet','muted','NO DATA','Waiting for the first sample')}
+  else{setCard('internet',p.online?'good':'bad',p.online?'ONLINE':'OFFLINE',`${f(p.latency,' ms')} · ${f(p.packet_loss,'%')} loss`)}
+
+  if(!s){setCard('speed','muted','—','No stored test yet')}
+  else{setCard('speed','good',s.download!=null?`${Math.round(s.download)} ↓`:'—',s.upload!=null?`${Math.round(s.upload)} Mbps ↑ · ${f(s.latency,' ms')}`:'No stored test')}
+
+  if(!g){setCard('gateway','muted','NO DATA','Waiting for the first sample')}
+  else{setCard('gateway',g.wan_up?'good':'bad',g.wan_up?'HEALTHY':'WAN DOWN',`CPU ${f(g.cpu,'%')} · RAM ${f(g.memory,'%')} · ${f(g.temperature,' °C')}`)}
+
+  const worst=Number(w.worst_retries||0);
+  if(!w.radios){setCard('wifi','muted','NO DATA','No radios reporting')}
+  else{setCard('wifi',worst>=40?'bad':worst>=30?'warn':'good',worst>=40?'ATTENTION':worst>=30?'WATCH':'HEALTHY',`Worst retries ${worst.toFixed(1)}% · ${w.radios||0} radios`)}
+
+  if(!u){setCard('ups','muted','NO DATA','Waiting for the first sample')}
+  else{const mains=String(u.status||'').includes('OL');setCard('ups',u.connected&&mains?'good':'bad',u.connected?(mains?'ON MAINS':'ON BATTERY'):'DISCONNECTED',`${f(u.load_pct,'%')} load · ${f(u.input_voltage,' V')}`)}
+
+  $('ov_incidents').textContent=d.active_incidents||0;
+  $('ov_incidents').className=d.active_incidents?'state-warn':'state-good';
+  $('overview_state').textContent=d.active_incidents?'ATTENTION':'HEALTHY';
+  $('overview_detail').textContent=`Internet ${p.online?'online':'offline'} · Latest speed ${s&&s.download?Math.round(s.download)+'/'+Math.round(s.upload||0)+' Mbps':'—'} · Gateway CPU ${g?f(g.cpu,'%'):'—'} · Wi-Fi worst retries ${worst.toFixed(1)}% · UPS ${u&&u.status||'—'}`;
+}
+load();setInterval(load,30000);
+})();

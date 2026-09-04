@@ -1,0 +1,31 @@
+/* Design tokens - single source of truth for color/spacing across the app.
+   --accent/--accent-rgb/--accent-soft/--accent-border are overridden inline
+   by theme.js per the user's chosen accent color; the values here are just
+   the default (green) shown before that JS runs. */
+:root {
+  --bg: #0e1116;
+  --surface: #15191f;
+  --surface-2: #10161e;
+  --border: #2b313a;
+  --text: #eef3f8;
+  --muted: #8d98a6;
+  --accent: #22c55e;
+  --accent-rgb: 34,197,94;
+  --accent-soft: rgba(34,197,94,.12);
+  --accent-border: rgba(34,197,94,.28);
+  --status-good: #4ade80;
+  --status-warn: #fbbf24;
+  --status-bad: #fb7185;
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 14px;
+}
+
+:root[data-theme="light"] {
+  --bg: #eef2f7;
+  --surface: #ffffff;
+  --surface-2: #f7f9fc;
+  --border: #d7dee8;
+  --text: #172033;
+  --muted: #66758a;
+}

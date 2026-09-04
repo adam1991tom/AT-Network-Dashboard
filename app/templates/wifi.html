@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
-<link rel="stylesheet" href="/static/monitoring.css?v=3.1.0">
 <section class="hero"><div><h1>Wi-Fi</h1><p>Live UniFi radio health, retries, channel utilisation and client load.</p></div></section>
 <div class="test-row"><button class="secondary-button v3-range active" data-hours="24">24h</button><button class="secondary-button v3-range" data-hours="168">7d</button><button class="secondary-button v3-range" data-hours="720">30d</button><button class="secondary-button v3-range" data-hours="2160">90d</button></div>
 <section class="card dashboard-card"><div class="panel-heading"><div><h2>Wi-Fi Optimiser</h2><p>Latest state for each current access-point radio.</p></div></div><div class="wifi-radio-grid" id="wifi_page_cards"></div><div class="empty-chart" id="wifi_page_empty" style="display:flex">Loading Wi-Fi data…</div></section>
