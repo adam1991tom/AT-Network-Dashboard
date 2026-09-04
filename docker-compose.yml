@@ -27,6 +27,14 @@ services:
       - /etc/localtime:/etc/localtime:ro
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      # Overrides the image's HTTP HEALTHCHECK, which is meaningless here since this
+      # container runs the poller loop only and never starts a web server.
+      test: ["CMD-SHELL", "test $$(( $$(date +%s) - $$(stat -c %Y /data/speedtest-heartbeat 2>/dev/null || echo 0) )) -lt 60"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
 
   at-network-updater:
     build:

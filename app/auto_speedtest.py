@@ -1,11 +1,19 @@
 from __future__ import annotations
-import time
+import os,time
 from datetime import datetime,timedelta,timezone
+from pathlib import Path
 from app.database import connect, write_transaction
 from app.integrations.unifi import UniFiClient
 from app.settings_store import all_settings,get_secret
 
 POLL_SECONDS=15;MIN_INTERVAL_MINUTES=5;MAX_INTERVAL_MINUTES=1440
+HEARTBEAT_PATH=Path(os.environ.get('DATA_DIR','/data'))/'speedtest-heartbeat'
+
+def _heartbeat():
+ # Liveness signal for the container healthcheck: proves the loop is iterating,
+ # independent of _state()'s change-only writes which can go quiet for a full interval.
+ try:HEARTBEAT_PATH.write_text(str(time.time()))
+ except Exception as exc:print(f'auto-speedtest: heartbeat write failed: {exc}')
 
 def _bool(v,default=False):return default if v is None else str(v).lower() in {'1','true','yes','on'}
 def _interval(cfg):
@@ -45,6 +53,7 @@ def _advance(due,now,minutes):
 def run_forever():
  print('auto-speedtest: v3.2.1 worker started');_ensure_audit()
  while True:
+  _heartbeat()
   try:
    cfg=all_settings();enabled=_bool(cfg.get('speedtest_auto_enabled'),True);minutes=_interval(cfg);now=_now()
    if not enabled:_state(speedtest_auto_state='disabled',speedtest_next_auto_at='');time.sleep(POLL_SECONDS);continue

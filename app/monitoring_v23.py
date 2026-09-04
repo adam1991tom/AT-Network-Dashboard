@@ -8,6 +8,7 @@ from app.database import connect, write_transaction
 from app.integrations.nut import NutPiHttpClient
 from app.integrations.unifi import UniFiClient
 from app.settings_store import all_settings, get_secret
+from app.system_tools import apply_retention
 from app.monitoring import (
     _apply_ap_current_names,
     _bool,
@@ -23,6 +24,8 @@ _worker_started = False
 _worker_lock = threading.Lock()
 _last_archive_sync = 0.0
 _last_speedtest_epoch = 0
+_last_retention = 0.0
+RETENTION_INTERVAL_SECONDS = 21600  # 6 hours
 _monitor_state: dict[str, Any] = {"last_attempt": None, "last_success": None, "last_error": None, "consecutive_failures": 0}
 
 
@@ -191,6 +194,20 @@ def collect_once() -> None:
 
     write_transaction(write_batch, attempts=10)
     _monitor_state.update({"last_success": ts, "last_error": None, "consecutive_failures": 0})
+    _apply_retention_if_due(cfg)
+
+
+def _apply_retention_if_due(cfg: dict[str, Any]) -> None:
+    global _last_retention
+    now_mono = time.monotonic()
+    if now_mono - _last_retention < RETENTION_INTERVAL_SECONDS:
+        return
+    try:
+        days = int(float(cfg.get("retention_days") or 365))
+        apply_retention(days)
+        _last_retention = now_mono
+    except Exception as exc:
+        print(f"monitoring: retention cleanup failed: {exc}")
 
 
 def _worker() -> None:
