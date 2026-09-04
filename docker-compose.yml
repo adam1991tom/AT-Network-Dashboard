@@ -12,6 +12,16 @@ services:
       - /etc/localtime:/etc/localtime:ro
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      # Mirrors the image's own HEALTHCHECK (Dockerfile) - made explicit here so
+      # every service's health signal is visible in one place.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3080/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    mem_limit: 512m
+    cpus: 1.0
 
   at-network-speedtest:
     build: .
@@ -35,6 +45,8 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 3
+    mem_limit: 256m
+    cpus: 0.5
 
   at-network-updater:
     build:
@@ -52,3 +64,13 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      # No HTTP surface - confirms the daemon socket is actually reachable,
+      # which is this container's one job.
+      test: ["CMD-SHELL", "test -S /var/run/docker.sock && docker version >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    mem_limit: 256m
+    cpus: 0.5
