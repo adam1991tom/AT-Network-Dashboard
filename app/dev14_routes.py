@@ -8,10 +8,17 @@ from app.database import DB_PATH,connect
 from app.settings_store import all_settings,encryption_status
 from app.system_tools import status,apply_retention,backup_bytes
 from app.v3_routes import router as v3_router
-from app.speedtest_audit_routes import router as audit_router
 from app.version import APP_VERSION,SCHEMA_VERSION
 
-router=APIRouter(tags=['system-tools']);router.include_router(v3_router);router.include_router(audit_router);VERSION=APP_VERSION
+router=APIRouter(tags=['system-tools']);router.include_router(v3_router);VERSION=APP_VERSION
+@router.get('/api/isp/scheduler-audit')
+def scheduler_audit(limit:int=Query(20,ge=1,le=200)):
+ con=connect()
+ try:
+  exists=con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='speedtest_schedule_audit'").fetchone()
+  if not exists:return {'items':[]}
+  return {'items':[dict(r) for r in con.execute('SELECT id,due_at,attempted_at,status,message,interval_minutes FROM speedtest_schedule_audit ORDER BY id DESC LIMIT ?',(limit,)).fetchall()]}
+ finally:con.close()
 @router.get('/api/system/info')
 def system_info():return {'version':VERSION,'environment':CONFIG.environment,'database':str(DB_PATH),'database_exists':DB_PATH.exists(),'python':platform.python_version(),'platform':platform.system(),'hostname':platform.node(),'encryption':encryption_status(),'authentication':True,'schema':SCHEMA_VERSION}
 @router.get('/api/system/monitoring-status')

@@ -8,6 +8,7 @@ from app.database import connect, write_transaction
 from app.integrations.nut import NutPiHttpClient
 from app.integrations.unifi import UniFiClient
 from app.settings_store import all_settings, get_secret
+from app.speedtest_repair import repair_legacy_speedtests
 from app.system_tools import apply_retention
 from app.monitoring import (
     _apply_ap_current_names,
@@ -223,10 +224,71 @@ def _worker() -> None:
         time.sleep(max(5.0, 30.0 - elapsed))
 
 
+_RECONCILE_SETTING_KEY = "speedtest_authoritative_reconcile_v3"
+
+
+def _reconcile_unifi_speedtest_archive() -> None:
+    """One-time authoritative rebuild of unifi-history rows from the controller archive.
+
+    Runs once per installation (gated by _RECONCILE_SETTING_KEY) so a fresh
+    deployment or one where UniFi wasn't previously configured gets a correct
+    history instead of whatever the pre-fix collector wrote.
+    """
+    cfg = all_settings()
+    if str(cfg.get(_RECONCILE_SETTING_KEY, "")).lower() == "true":
+        return
+    if str(cfg.get("unifi_enabled", "false")).lower() != "true":
+        return
+    url = str(cfg.get("unifi_url") or "").strip()
+    key = get_secret("unifi_api_key") or ""
+    if not url or not key:
+        return
+    try:
+        days = max(90, min(730, int(float(cfg.get("retention_days") or 365)) or 365))
+    except Exception:
+        days = 365
+    client = UniFiClient(url, key, str(cfg.get("unifi_verify_ssl") or "false").lower() == "true")
+    rows = client.speedtest_history(days)
+    if not rows:
+        print("monitoring: speedtest reconcile found no archive rows; database left unchanged")
+        return
+    con = connect()
+    try:
+        before = con.execute("SELECT COUNT(*) FROM speedtest_history WHERE source LIKE 'unifi%'").fetchone()[0]
+        con.execute("DELETE FROM speedtest_history WHERE source LIKE 'unifi%'")
+        inserted = 0
+        for row in rows:
+            epoch = int(row.get("epoch_ms") or 0)
+            if not epoch:
+                continue
+            cur = con.execute(
+                "INSERT OR IGNORE INTO speedtest_history(ts,epoch_ms,download,upload,latency,interface_name,wan_group,source) VALUES (?,?,?,?,?,?,?,?)",
+                (row.get("ts"), epoch, row.get("download"), row.get("upload"), row.get("latency"), row.get("interface_name"), row.get("wan_group") or "WAN", "unifi-history"),
+            )
+            inserted += max(cur.rowcount, 0)
+        con.execute(
+            "INSERT INTO settings(setting_key,setting_value,updated_at) VALUES (?,?,CURRENT_TIMESTAMP) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,updated_at=CURRENT_TIMESTAMP",
+            (_RECONCILE_SETTING_KEY, "true"),
+        )
+        con.commit()
+        print(f"monitoring: speedtest reconcile rebuilt UniFi history {before} -> {inserted} authoritative rows")
+    finally:
+        con.close()
+
+
 def start_monitoring() -> None:
     global _worker_started
     with _worker_lock:
         if _worker_started:
             return
+        try:
+            _reconcile_unifi_speedtest_archive()
+        except Exception as exc:
+            print(f"monitoring: speedtest reconcile failed: {exc}")
+        try:
+            repair_legacy_speedtests()
+        except Exception as exc:
+            # Never stop monitoring just because an old database cannot be repaired.
+            print(f"monitoring: speedtest repair failed: {exc}")
         threading.Thread(target=_worker, name="at-network-monitor-v331", daemon=True).start()
         _worker_started = True

@@ -13,7 +13,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.auth import COOKIE_NAME, change_password, create_admin, has_admin, login, logout, session_user
 from app.config import CONFIG
-from app.database import DB_PATH, connect, initialise
+from app.database import DB_PATH, initialise
 from app.dev14_routes import router as dev14_router
 from app.integrations.discord import DiscordNotifier
 from app.integrations.nut import NutPiHttpClient
@@ -22,6 +22,7 @@ from app.integrations.uptime_kuma import UptimeKumaClient
 from app.monitoring_v23 import start_monitoring
 from app.monitoring_routes import router as monitoring_router
 from app.security import is_locked, record_failure, reset as reset_login_attempts
+from app.services import network_changes, unifi_import
 from app.settings_store import all_settings, encryption_status, get_secret, set_secret, set_settings
 from app.updater import check_updates, request_update, update_state
 from app.version import APP_VERSION
@@ -177,25 +178,7 @@ async def api_import_unifi_history(request:Request)->dict:
     if error:return error
     try:days=int(payload.get("history_probe_days",365))
     except Exception:days=365
-    history=client.retained_history(days);inserted_wan=0;inserted_ap=0;con=connect()
-    try:
-        for source,rows in history.items():
-            for row in rows:
-                try:epoch_ms=int(float(row.get("time")))
-                except Exception:continue
-                ts=str(row.get("datetime") or "").strip()
-                if not ts:continue
-                if source=="ap_hourly":
-                    device_id=str(row.get("ap") or row.get("oid") or "").strip()
-                    if not device_id:continue
-                    cur=con.execute("INSERT OR IGNORE INTO unifi_ap_traffic_history(ts,epoch_ms,device_id,clients,bytes,rx_bytes,tx_bytes) VALUES (?,?,?,?,?,?,?)",(ts,epoch_ms,device_id,row.get("num_sta"),row.get("bytes"),row.get("rx_bytes"),row.get("tx_bytes")));inserted_ap+=max(cur.rowcount,0)
-                elif source in {"gateway_hourly","site_hourly","site_daily"}:
-                    scope="gateway" if source=="gateway_hourly" else "site";bucket="daily" if source=="site_daily" else "hourly";object_id=str(row.get("gw") or row.get("site") or row.get("oid") or "").strip()
-                    if not object_id:continue
-                    cur=con.execute("INSERT OR IGNORE INTO unifi_wan_history(ts,epoch_ms,bucket,scope,object_id,clients,rx_bytes,tx_bytes) VALUES (?,?,?,?,?,?,?,?)",(ts,epoch_ms,bucket,scope,object_id,row.get("num_sta"),row.get("wan-rx_bytes"),row.get("wan-tx_bytes")));inserted_wan+=max(cur.rowcount,0)
-        con.commit();totals={"wan":con.execute("SELECT COUNT(*) FROM unifi_wan_history").fetchone()[0],"ap":con.execute("SELECT COUNT(*) FROM unifi_ap_traffic_history").fetchone()[0]}
-    finally:con.close()
-    return {"ok":True,"message":f"Imported {inserted_wan+inserted_ap} new UniFi history records","inserted":{"wan":inserted_wan,"ap":inserted_ap},"totals":totals}
+    return unifi_import.import_retained_history(client,days)
 @app.post("/api/settings/test/ups")
 async def api_test_ups(request:Request)->dict:
     payload=await request.json();host=str(payload.get("ups_host","")).strip();path=str(payload.get("nutpi_status_path","/api/nutpi/status.cgi")).strip()
@@ -209,17 +192,10 @@ async def api_test_discord(request:Request)->dict:
 @app.post("/api/settings/test/ping")
 async def api_test_ping(request:Request)->dict:payload=await request.json();return _ping(str(payload.get("ping_target","")))
 @app.get("/api/network-changes")
-def api_network_changes()->dict:
-    con=connect()
-    try:return {"items":[dict(r) for r in con.execute("SELECT id,ts,category,summary,details FROM network_changes ORDER BY id DESC LIMIT 25").fetchall()]}
-    finally:con.close()
+def api_network_changes()->dict:return network_changes.list_recent()
 @app.post("/api/network-changes")
 async def api_add_network_change(request:Request)->dict:
-    p=await request.json();category=str(p.get("category","General")).strip() or "General";summary=str(p.get("summary","")).strip();details=str(p.get("details","")).strip()
-    if not summary:return {"ok":False,"message":"Enter a summary of the change"}
-    con=connect()
-    try:cur=con.execute("INSERT INTO network_changes(category,summary,details) VALUES (?,?,?)",(category,summary,details));con.commit();return {"ok":True,"id":cur.lastrowid}
-    finally:con.close()
+    p=await request.json();return network_changes.add(str(p.get("category","General")),str(p.get("summary","")),str(p.get("details","")))
 @app.get("/api/system/info")
 def api_system_info()->dict:return {"version":VERSION,"environment":CONFIG.environment,"database":str(DB_PATH),"database_exists":DB_PATH.exists(),"python":platform.python_version(),"platform":platform.system(),"hostname":platform.node(),"encryption":encryption_status(),"authentication":True}
 @app.get("/api/system/update/check")

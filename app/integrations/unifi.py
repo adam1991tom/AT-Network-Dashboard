@@ -155,7 +155,7 @@ class UniFiClient:
         for row in raw_rows:
             # rundate/runDate are the actual test execution time. A changing status
             # timestamp must never create duplicate speed-test records.
-            value = row.get("rundate") or row.get("runDate") or row.get("time") or row.get("timestamp")
+            value = row.get("rundate") or row.get("runDate") or row.get("run_date") or row.get("last_run") or row.get("time") or row.get("timestamp")
             if value is None and row.get("datetime"):
                 try: value = datetime.fromisoformat(str(row["datetime"]).replace("Z", "+00:00")).timestamp() * 1000
                 except Exception: value = None
@@ -243,13 +243,18 @@ class UniFiClient:
         link_speed=wan.get("speed") or uplink.get("speed")
         speedtest=None
         if speed:
-            run=speed.get("rundate") or speed.get("runDate")
-            try: epoch_ms=int(float(run)*1000) if run is not None else 0
+            # Deliberately do not use speed["timestamp"]: on UniFi gateways that value can
+            # change while the same speed-test result remains published, which would create
+            # duplicate rows for one real test. rundate/runDate (and their rarer aliases) are
+            # the actual run time; treat the value as ms only if it isn't already ms-scale.
+            run=speed.get("rundate") or speed.get("runDate") or speed.get("run_date") or speed.get("last_run") or speed.get("time") or 0
+            try: epoch_ms=int(float(run))
             except (TypeError,ValueError): epoch_ms=0
+            if 0<epoch_ms<10_000_000_000: epoch_ms*=1000
             if epoch_ms:
                 speedtest={"epoch_ms":epoch_ms,"download":self._number(speed.get("xput_download")),"upload":self._number(speed.get("xput_upload")),"latency":self._number(speed.get("latency")),"interface_name":str(speed.get("source_interface") or speed.get("interface") or ""),"wan_group":str(speed.get("wan_group","WAN"))}
         gateways=uplink.get("gateways") if isinstance(uplink.get("gateways"),list) else []
-        wan_dns=wan.get("dns") or uplink.get("dns") or device.get("wan_dns")
+        wan_dns=wan.get("dns") or wan.get("nameservers") or uplink.get("dns") or device.get("wan_dns")
         return {
             "name":device.get("name") or device.get("model") or "Gateway",
             "uptime":int(self._number(system.get("uptime") or device.get("uptime"),0) or 0),
@@ -261,10 +266,10 @@ class UniFiClient:
             "tx_dropped":int(self._number(wan.get("tx_dropped",uplink.get("tx_dropped",device.get("tx_dropped"))),0) or 0),
             "rx_rate":self._number(wan.get("rx_rate",uplink.get("rx_rate",device.get("rx_rate"))),0),
             "tx_rate":self._number(wan.get("tx_rate",uplink.get("tx_rate",device.get("tx_rate"))),0),
-            "rx_bytes":self._number(wan.get("rx_bytes",uplink.get("rx_bytes"))),"tx_bytes":self._number(wan.get("tx_bytes",uplink.get("tx_bytes"))),
-            "wan_interface":wan.get("ifname") or wan.get("name") or uplink.get("name"),"wan_gateway":gateways[0] if gateways else uplink.get("gateway"),"wan_dns":wan_dns,
-            "model":device.get("model"),"version":device.get("version"),"mac":device.get("mac"),"lan_ip":device.get("lan_ip") or device.get("ip"),"site":device.get("site_id"),
-            "load_average":device.get("load_average"),"clients":device.get("num_sta"),"adopted":device.get("adopted"),"state":device.get("state"),"speedtest":speedtest,
+            "rx_bytes":self._number(wan.get("rx_bytes") or device.get("rx_bytes") or uplink.get("rx_bytes")),"tx_bytes":self._number(wan.get("tx_bytes") or device.get("tx_bytes") or uplink.get("tx_bytes")),
+            "wan_interface":wan.get("name") or wan.get("ifname") or device.get("wan_interface") or uplink.get("name"),"wan_gateway":wan.get("gateway") or wan.get("gw") or (gateways[0] if gateways else None) or uplink.get("gateway"),"wan_dns":wan_dns,
+            "model":device.get("model") or device.get("shortname"),"version":device.get("version") or device.get("firmware_version"),"mac":device.get("mac"),"lan_ip":device.get("ip") or device.get("lan_ip"),"site":device.get("site_name") or device.get("site_id") or device.get("site"),
+            "load_average":system.get("loadavg_1") or system.get("load_average") or device.get("loadavg_1") or device.get("load_average"),"clients":device.get("num_sta") or device.get("user-num_sta") or device.get("num_user"),"adopted":device.get("adopted"),"state":device.get("state"),"speedtest":speedtest,
         }
 
     def _ap_stats(self, device: dict[str, Any]) -> dict[str, Any]:
