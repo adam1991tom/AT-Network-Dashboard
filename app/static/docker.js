@@ -53,17 +53,66 @@
     }
   }
 
+  const PROCESS_LABELS = { plex: 'Plex', ersatztv: 'ErsatzTV', nexroll: 'NeXroll' };
+
+  function processRow(p) {
+    const state = p.running && p.port_open ? 'good' : p.running ? 'warn' : 'bad';
+    const text = p.running && p.port_open ? 'RUNNING' : p.running ? 'STARTING' : 'DOWN';
+    return `<tr data-name="${esc(p.name)}">
+      <td><strong>${esc(PROCESS_LABELS[p.name] || p.name)}</strong></td>
+      <td><span class="status-pill ${state}">${text}</span></td>
+      <td>${p.process_count ?? 0}</td>
+      <td class="button-grid"><button type="button" class="secondary-button plexmania-restart">Restart</button></td>
+    </tr>`;
+  }
+
+  function plexmaniaSection(data) {
+    if (!data.enabled) {
+      return `<section class="card dashboard-card"><div class="panel-heading"><h2>plexmania (Windows)</h2><span class="status-pill disabled">OFF</span></div><p class="muted">${esc(data.message)}</p></section>`;
+    }
+    if (!data.ok) {
+      return `<section class="card dashboard-card"><div class="panel-heading"><h2>plexmania (Windows)</h2><span class="status-pill bad">ERROR</span></div><p class="muted">${esc(data.message)}</p></section>`;
+    }
+    const rows = (data.processes || []).map(processRow).join('');
+    return `<section class="card dashboard-card"><div class="panel-heading"><h2>plexmania (Windows)</h2><span class="status-pill good">${(data.processes || []).length} apps</span></div>
+      <div class="table-wrap"><table class="settings-table"><thead><tr><th>App</th><th>Status</th><th>Processes</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="muted">No data</td></tr>'}</tbody></table></div>
+    </section>`;
+  }
+
+  async function doPlexmaniaRestart(name, button) {
+    if (!confirm(`Restart ${PROCESS_LABELS[name] || name} on plexmania?`)) return;
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/plexmania/processes/${name}/restart`, { method: 'POST' });
+      const data = await response.json();
+      if (!data.ok) alert(`Failed: ${data.message || 'unknown error'}`);
+    } catch (e) {
+      alert(`Failed: ${e.message}`);
+    } finally {
+      button.disabled = false;
+      load();
+    }
+  }
+
   async function load() {
     try {
       const response = await fetch('/api/docker/summary', { cache: 'no-store' });
       if (response.status === 401) { location.href = '/login'; return; }
       const data = await response.json();
       const container = document.getElementById('docker_hosts');
-      container.innerHTML = Object.keys(HOST_LABELS).map(host => hostSection(host, data[host] || { enabled: false, message: 'No data' })).join('');
+      const sections = Object.keys(HOST_LABELS).map(host => hostSection(host, data[host] || { enabled: false, message: 'No data' }));
+      sections.push(plexmaniaSection(data.plexmania || { enabled: false, message: 'No data' }));
+      container.innerHTML = sections.join('');
       container.querySelectorAll('.docker-action').forEach(btn => {
         btn.addEventListener('click', () => {
           const row = btn.closest('tr');
           doAction(row.dataset.host, row.dataset.id, btn.dataset.action, btn);
+        });
+      });
+      container.querySelectorAll('.plexmania-restart').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const row = btn.closest('tr');
+          doPlexmaniaRestart(row.dataset.name, btn);
         });
       });
       document.getElementById('docker_refresh_state').textContent = `Updated ${new Date().toLocaleTimeString()}`;
