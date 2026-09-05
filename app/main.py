@@ -19,11 +19,12 @@ from app.integrations.discord import DiscordNotifier
 from app.integrations.nut import NutPiHttpClient
 from app.integrations.unifi import UniFiClient
 from app.integrations.uptime_kuma import UptimeKumaClient
+from app.media_routes import router as media_router
 from app.monitoring_v23 import start_monitoring
 from app.monitoring_routes import router as monitoring_router
 from app.security import is_locked, record_failure, reset as reset_login_attempts
 from app.services import network_changes, unifi_import
-from app.settings_store import all_settings, encryption_status, get_secret, set_secret, set_settings
+from app.settings_store import SECRET_KEYS, all_settings, encryption_status, get_secret, set_secret, set_settings
 from app.updater import check_updates, request_update, update_state
 from app.version import APP_VERSION
 
@@ -34,6 +35,7 @@ app = FastAPI(title="AT Network Dashboard", version=VERSION)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 app.include_router(monitoring_router)
 app.include_router(dev14_router)
+app.include_router(media_router)
 templates = Environment(loader=FileSystemLoader(BASE_DIR / "templates"), autoescape=select_autoescape(["html", "xml"]))
 
 def _bool(value: object, default: bool = False) -> bool:
@@ -148,7 +150,7 @@ def api_settings()->dict:return all_settings()
 @app.post("/api/settings")
 async def api_save_settings(request:Request)->dict:
     payload=await request.json();set_settings(payload)
-    for key in ("unifi_api_key","discord_webhook","uptime_kuma_api_key"):
+    for key in SECRET_KEYS:
         if str(payload.get(key,"")).strip():set_secret(key,str(payload[key]).strip())
     set_settings({"setup_complete":"true"});return {"ok":True,"settings":all_settings()}
 @app.post("/api/settings/test/unifi")

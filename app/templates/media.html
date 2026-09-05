@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block content %}
+<section class="hero"><div><h1>Media</h1><p>Live status across Plex, Tautulli, the *arr stack, SABnzbd, ErsatzTV and NeXroll.</p></div><span class="muted" id="media_refresh_state">Loading…</span></section>
+<section class="info-grid" id="media_cards"></section>
+<script src="/static/media.js?v={{ version }}"></script>
+{% endblock %}
