@@ -21,6 +21,7 @@ from app.integrations.unifi import UniFiClient
 from app.integrations.uptime_kuma import UptimeKumaClient
 from app.docker_routes import router as docker_router
 from app.media_routes import router as media_router
+from app.infra_monitoring import start_infra_monitoring
 from app.monitoring_v23 import start_monitoring
 from app.monitoring_routes import router as monitoring_router
 from app.security import is_locked, record_failure, reset as reset_login_attempts
@@ -64,7 +65,7 @@ def _kuma_from_payload(payload: dict) -> tuple[UptimeKumaClient | None, dict | N
     return UptimeKumaClient(url,slug,key,verify),None
 
 @app.on_event("startup")
-def startup() -> None: initialise(); start_monitoring()
+def startup() -> None: initialise(); start_monitoring(); start_infra_monitoring()
 
 CSRF_COOKIE_NAME = "at_csrf"
 _CSRF_EXEMPT_PATHS = {"/api/health", "/login", "/setup-admin"}
