@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block content %}
 <section class="hero"><div><h1>Docker</h1><p>Live containers across newtiny and beast, with start/stop/restart control.</p></div><span class="muted" id="docker_refresh_state">Loading…</span></section>
+<section class="metric-grid dashboard-metrics"><article class="card metric"><span>Containers Running</span><strong id="docker_running">—</strong><small id="docker_running_detail">Loading</small></article><article class="card metric"><span>Hosts Online</span><strong id="docker_hosts_online">—</strong><small>Docker agents reachable</small></article><article class="card metric"><span>Plexmania Apps</span><strong id="docker_plexmania">—</strong><small>Native processes running</small></article></section>
 <div id="docker_hosts"></div>
 <script src="/static/docker.js?v={{ version }}"></script>
 {% endblock %}

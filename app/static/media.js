@@ -70,6 +70,19 @@
     return `<article class="card info-tile media-card"><div class="panel-heading"><h2>${label}</h2>${pill('good', 'OK')}</div>${body}</article>`;
   }
 
+  function updateMetrics(data) {
+    const enabled = Object.values(data).filter(d => d.enabled);
+    const healthy = enabled.filter(d => d.ok).length;
+    document.getElementById('media_healthy').textContent = enabled.length ? `${healthy}/${enabled.length}` : 'OFF';
+    document.getElementById('media_healthy_detail').textContent = enabled.length ? `${enabled.length - healthy} unavailable` : 'No services enabled';
+    const streams = (data.plex?.stream_count || 0) + (data.tautulli?.stream_count || 0);
+    document.getElementById('media_streams').textContent = streams;
+    const queue = (data.sonarr?.queue_count || 0) + (data.radarr?.queue_count || 0) + (data.sabnzbd?.queue_count || 0);
+    document.getElementById('media_queue').textContent = queue;
+    const p = data.prowlarr || {};
+    document.getElementById('media_indexers').textContent = p.enabled ? `${p.enabled_count ?? 0}/${p.indexer_count ?? 0}` : '—';
+  }
+
   async function load() {
     try {
       const response = await fetch('/api/media/summary', { cache: 'no-store' });
@@ -80,6 +93,7 @@
         const container = document.getElementById(`media_cards_${cat === 'downloads' ? 'downloads' : 'streaming'}`);
         container.innerHTML = names.map(name => card(name, data[name] || { enabled: false, message: 'No data' })).join('');
       }
+      updateMetrics(data);
       document.getElementById('media_refresh_state').textContent = `Updated ${new Date().toLocaleTimeString()}`;
     } catch (e) {
       document.getElementById('media_refresh_state').textContent = 'Refresh failed: ' + e.message;

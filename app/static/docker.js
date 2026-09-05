@@ -94,6 +94,20 @@
     }
   }
 
+  function updateMetrics(data) {
+    const hosts = Object.keys(HOST_LABELS).map(h => data[h] || { enabled: false });
+    const running = hosts.reduce((n, h) => n + (h.containers || []).filter(c => c.status === 'running').length, 0);
+    const total = hosts.reduce((n, h) => n + (h.containers || []).length, 0);
+    document.getElementById('docker_running').textContent = total ? `${running}/${total}` : '—';
+    document.getElementById('docker_running_detail').textContent = total ? `${total} total across ${hosts.filter(h => h.enabled).length} host(s)` : 'No agents enabled';
+    const enabledHosts = hosts.filter(h => h.enabled);
+    const onlineHosts = enabledHosts.filter(h => h.ok).length;
+    document.getElementById('docker_hosts_online').textContent = enabledHosts.length ? `${onlineHosts}/${enabledHosts.length}` : '—';
+    const pm = data.plexmania || {};
+    const pmRunning = (pm.processes || []).filter(p => p.running).length;
+    document.getElementById('docker_plexmania').textContent = pm.enabled ? `${pmRunning}/${(pm.processes || []).length}` : 'OFF';
+  }
+
   async function load() {
     try {
       const response = await fetch('/api/docker/summary', { cache: 'no-store' });
@@ -103,6 +117,7 @@
       const sections = Object.keys(HOST_LABELS).map(host => hostSection(host, data[host] || { enabled: false, message: 'No data' }));
       sections.push(plexmaniaSection(data.plexmania || { enabled: false, message: 'No data' }));
       container.innerHTML = sections.join('');
+      updateMetrics(data);
       container.querySelectorAll('.docker-action').forEach(btn => {
         btn.addEventListener('click', () => {
           const row = btn.closest('tr');
