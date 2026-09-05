@@ -1,0 +1,5 @@
+{% extends "base.html" %}{% block content %}
+<section class="hero"><div><h1>Docker</h1><p>Live containers across newtiny and beast, with start/stop/restart control.</p></div><span class="muted" id="docker_refresh_state">Loading…</span></section>
+<div id="docker_hosts"></div>
+<script src="/static/docker.js?v={{ version }}"></script>
+{% endblock %}

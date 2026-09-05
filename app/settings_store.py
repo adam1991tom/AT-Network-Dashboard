@@ -16,11 +16,13 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "sonarr_enabled":"false","sonarr_url":"","radarr_enabled":"false","radarr_url":"","prowlarr_enabled":"false","prowlarr_url":"",
     "sabnzbd_enabled":"false","sabnzbd_url":"","tautulli_enabled":"false","tautulli_url":"","plex_enabled":"false","plex_url":"",
     "ersatztv_enabled":"false","ersatztv_url":"","nexroll_enabled":"false","nexroll_url":"",
+    "docker_agent_newtiny_enabled":"false","docker_agent_newtiny_url":"http://docker-agent:8199",
+    "docker_agent_beast_enabled":"false","docker_agent_beast_url":"",
     "wifi_warning_threshold":"35","wifi_major_threshold":"40","wifi_critical_threshold":"50","wifi_persist_minutes":"10","wifi_recovery_threshold":"20","wifi_recovery_minutes":"10",
     "notify_internet":"true","notify_wifi":"true","notify_power":"true","notify_gateway":"true","notify_system":"true","notification_min_severity":"warning","notification_cooldown_minutes":"15",
     "maintenance_mode":"false","retention_days":"365","session_hours":"8","update_channel":"stable","auto_update_check":"true","notify_update_available":"true","setup_complete":"false",
 }
-SECRET_KEYS={"unifi_api_key","discord_webhook","uptime_kuma_api_key","sonarr_api_key","radarr_api_key","prowlarr_api_key","sabnzbd_api_key","tautulli_api_key","plex_token","nexroll_api_key"}; INSTALL_KEY_PATH=Path("/data/install.key")
+SECRET_KEYS={"unifi_api_key","discord_webhook","uptime_kuma_api_key","sonarr_api_key","radarr_api_key","prowlarr_api_key","sabnzbd_api_key","tautulli_api_key","plex_token","nexroll_api_key","docker_agent_newtiny_token","docker_agent_beast_token"}; INSTALL_KEY_PATH=Path("/data/install.key")
 _defaults_ready=False
 _defaults_lock=threading.Lock()
 

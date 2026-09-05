@@ -1,0 +1,20 @@
+services:
+  docker-agent:
+    image: at-docker-agent:beast
+    container_name: at-docker-agent
+    restart: unless-stopped
+    # QNAP Container Station's virtual-switch/NAT setup for a fresh bridge
+    # network fails on this host (dnsmasq add failure). Host networking
+    # avoids that entirely - fine here since this is a single container
+    # that only needs to listen on one port, no inter-container networking.
+    network_mode: host
+    environment:
+      AGENT_TOKEN: ${AGENT_TOKEN}
+      AGENT_HOST_LABEL: beast
+      AGENT_PORT: "8199"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    cpus: 0.25

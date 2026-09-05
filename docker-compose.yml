@@ -74,3 +74,28 @@ services:
       retries: 3
     mem_limit: 256m
     cpus: 0.5
+
+  docker-agent:
+    build: ./docker-agent
+    container_name: at-network-dashboard-docker-agent
+    restart: unless-stopped
+    # No published port: only reachable from other containers on this
+    # compose network (the main app calls it as http://docker-agent:8199).
+    # This is the only container with Docker socket access that also has
+    # write (start/stop/restart) capability, so keeping it off the LAN
+    # entirely - not just off the public internet - is the point.
+    environment:
+      AGENT_TOKEN: ${DOCKER_AGENT_TOKEN}
+      AGENT_HOST_LABEL: newtiny
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8199/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    mem_limit: 128m
+    cpus: 0.25

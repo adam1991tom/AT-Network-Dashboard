@@ -19,6 +19,7 @@ from app.integrations.discord import DiscordNotifier
 from app.integrations.nut import NutPiHttpClient
 from app.integrations.unifi import UniFiClient
 from app.integrations.uptime_kuma import UptimeKumaClient
+from app.docker_routes import router as docker_router
 from app.media_routes import router as media_router
 from app.monitoring_v23 import start_monitoring
 from app.monitoring_routes import router as monitoring_router
@@ -36,6 +37,7 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 app.include_router(monitoring_router)
 app.include_router(dev14_router)
 app.include_router(media_router)
+app.include_router(docker_router)
 templates = Environment(loader=FileSystemLoader(BASE_DIR / "templates"), autoescape=select_autoescape(["html", "xml"]))
 
 def _bool(value: object, default: bool = False) -> bool:
