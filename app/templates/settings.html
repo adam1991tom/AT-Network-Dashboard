@@ -54,7 +54,8 @@
     </section>
 
     <section class="card settings-content settings-panel" id="integrations">
-      <div class="panel-heading"><div><h2>Integrations</h2><p>Network controller, UPS and alert delivery.</p></div></div>
+      <div class="panel-heading"><div><h2>Integrations</h2><p>Network controller, UPS, media stack, Docker control and alert delivery.</p></div></div>
+      <h3 class="integration-group-label">Network &amp; Power</h3>
       <div class="integration-block">
         <div class="integration-title"><div><strong>UniFi Network</strong><span class="muted">Gateway, WAN, Wi-Fi and speed-test telemetry.</span></div><input id="unifi_enabled" type="checkbox"></div>
         <div class="field-grid">
@@ -80,6 +81,13 @@
         <label>Webhook<input id="discord_webhook" type="password" placeholder="Leave blank to keep saved webhook"><span class="secret-status" id="discord_status"></span></label>
         <div class="test-row"><button type="button" class="secondary-button" id="test_discord">Send Discord Test</button><span class="test-status" id="discord_test_status">Not tested</span></div>
       </div>
+
+      <h3 class="integration-group-label">Media &amp; Entertainment</h3>
+      <div id="integration-group-media"></div>
+
+      <h3 class="integration-group-label">Infrastructure Control</h3>
+      <p class="integration-group-hint">Per-host agents for Docker container and process control - see the <a href="/docker">Docker</a> page.</p>
+      <div id="integration-group-infra"></div>
     </section>
 
     <section class="card settings-content settings-panel" id="wifi">

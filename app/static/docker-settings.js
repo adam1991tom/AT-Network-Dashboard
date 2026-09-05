@@ -1,12 +1,12 @@
 (() => {
   const AGENTS = [
-    { settingsKey: 'docker_agent_newtiny', testSlug: 'docker-agent-newtiny', label: 'Docker - newtiny (this server)', hint: 'Local docker-agent sidecar, no host port needed.', placeholder: 'http://docker-agent:8199' },
-    { settingsKey: 'docker_agent_beast', testSlug: 'docker-agent-beast', label: 'Docker - beast (QNAP)', hint: 'Remote docker-agent deployed in Container Station.', placeholder: 'http://10.0.0.3:8199' },
-    { settingsKey: 'plexmania_agent', testSlug: 'plexmania-agent', label: 'Plexmania (Windows) - Plex/ErsatzTV/NeXroll', hint: 'PowerShell agent for process status and restart (no Docker on this host).', placeholder: 'http://10.0.0.6:8299' },
+    { settingsKey: 'docker_agent_newtiny', testSlug: 'docker-agent-newtiny', label: 'newtiny (this server)', hint: 'Local docker-agent sidecar, no host port needed.', placeholder: 'http://docker-agent:8199' },
+    { settingsKey: 'docker_agent_beast', testSlug: 'docker-agent-beast', label: 'beast (QNAP)', hint: 'Remote docker-agent deployed in Container Station.', placeholder: 'http://10.0.0.3:8199' },
+    { settingsKey: 'plexmania_agent', testSlug: 'plexmania-agent', label: 'plexmania (Windows)', hint: 'Process control for Plex/ErsatzTV/NeXroll - no Docker on this host.', placeholder: 'http://10.0.0.6:8299' },
   ];
 
   document.addEventListener('DOMContentLoaded', async () => {
-    const panel = document.getElementById('integrations');
+    const panel = document.getElementById('integration-group-infra');
     if (!panel) return;
     const $ = (id) => document.getElementById(id);
 

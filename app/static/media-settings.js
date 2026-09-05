@@ -1,21 +1,29 @@
 (() => {
   const SERVICES = [
-    { key: 'sonarr', label: 'Sonarr', hint: 'TV show management.', placeholder: 'http://10.0.0.55:8989', needsKey: true },
-    { key: 'radarr', label: 'Radarr', hint: 'Movie management.', placeholder: 'http://10.0.0.54:7878', needsKey: true },
-    { key: 'prowlarr', label: 'Prowlarr', hint: 'Indexer management.', placeholder: 'http://10.0.0.53:9696', needsKey: true },
-    { key: 'sabnzbd', label: 'SABnzbd', hint: 'Usenet downloader.', placeholder: 'http://10.0.0.50:8080', needsKey: true },
-    { key: 'tautulli', label: 'Tautulli', hint: 'Plex activity and stats.', placeholder: 'http://10.0.0.2:8181', needsKey: true },
-    { key: 'plex', label: 'Plex', hint: 'Direct Plex Media Server API.', placeholder: 'http://10.0.0.6:32400', needsKey: true, keyLabel: 'Plex token' },
-    { key: 'ersatztv', label: 'ErsatzTV', hint: 'Virtual live TV channels.', placeholder: 'http://10.0.0.6:8409', needsKey: false },
-    { key: 'nexroll', label: 'NeXroll', hint: 'Plex pre-roll manager.', placeholder: 'http://10.0.0.6:9393', needsKey: true, keyLabel: 'API key' },
+    { key: 'plex', label: 'Plex', hint: 'Direct Plex Media Server API.', placeholder: 'http://10.0.0.6:32400', needsKey: true, keyLabel: 'Plex token', category: 'Streaming' },
+    { key: 'tautulli', label: 'Tautulli', hint: 'Plex activity and stats.', placeholder: 'http://10.0.0.2:8181', needsKey: true, category: 'Streaming' },
+    { key: 'ersatztv', label: 'ErsatzTV', hint: 'Virtual live TV channels.', placeholder: 'http://10.0.0.6:8409', needsKey: false, category: 'Streaming' },
+    { key: 'nexroll', label: 'NeXroll', hint: 'Plex pre-roll manager.', placeholder: 'http://10.0.0.6:9393', needsKey: true, keyLabel: 'API key', category: 'Streaming' },
+    { key: 'sonarr', label: 'Sonarr', hint: 'TV show management.', placeholder: 'http://10.0.0.55:8989', needsKey: true, category: 'Downloads & Automation' },
+    { key: 'radarr', label: 'Radarr', hint: 'Movie management.', placeholder: 'http://10.0.0.54:7878', needsKey: true, category: 'Downloads & Automation' },
+    { key: 'prowlarr', label: 'Prowlarr', hint: 'Indexer management.', placeholder: 'http://10.0.0.53:9696', needsKey: true, category: 'Downloads & Automation' },
+    { key: 'sabnzbd', label: 'SABnzbd', hint: 'Usenet downloader.', placeholder: 'http://10.0.0.50:8080', needsKey: true, category: 'Downloads & Automation' },
   ];
 
   document.addEventListener('DOMContentLoaded', async () => {
-    const panel = document.getElementById('integrations');
+    const panel = document.getElementById('integration-group-media');
     if (!panel) return;
     const $ = (id) => document.getElementById(id);
 
+    let lastCategory = null;
     for (const svc of SERVICES) {
+      if (svc.category !== lastCategory) {
+        const sub = document.createElement('h4');
+        sub.className = 'integration-subgroup-label';
+        sub.textContent = svc.category;
+        panel.appendChild(sub);
+        lastCategory = svc.category;
+      }
       const block = document.createElement('div');
       block.className = 'integration-block';
       const keyField = svc.needsKey

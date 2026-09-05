@@ -1,5 +1,8 @@
 {% extends "base.html" %}{% block content %}
 <section class="hero"><div><h1>Media</h1><p>Live status across Plex, Tautulli, the *arr stack, SABnzbd, ErsatzTV and NeXroll.</p></div><span class="muted" id="media_refresh_state">Loading…</span></section>
-<section class="info-grid" id="media_cards"></section>
+<h2 class="media-section-label">Streaming</h2>
+<section class="info-grid" id="media_cards_streaming"></section>
+<h2 class="media-section-label">Downloads &amp; Automation</h2>
+<section class="info-grid" id="media_cards_downloads"></section>
 <script src="/static/media.js?v={{ version }}"></script>
 {% endblock %}

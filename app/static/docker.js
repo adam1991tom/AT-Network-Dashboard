@@ -15,10 +15,10 @@
       <td>${statusPill(c.status)}</td>
       <td>${c.cpu_percent != null ? c.cpu_percent + '%' : '—'}</td>
       <td>${c.mem_usage_mb != null ? c.mem_usage_mb.toFixed(0) + ' / ' + (c.mem_limit_mb ? c.mem_limit_mb.toFixed(0) : '∞') + ' MB' : '—'}</td>
-      <td class="button-grid">
-        <button type="button" class="secondary-button docker-action" data-action="start" ${startDisabled}>Start</button>
-        <button type="button" class="secondary-button docker-action" data-action="restart" ${disabled}>Restart</button>
-        <button type="button" class="secondary-button docker-action" data-action="stop" ${disabled}>Stop</button>
+      <td class="docker-actions">
+        <button type="button" class="secondary-button compact-action docker-action" data-action="start" ${startDisabled}>Start</button>
+        <button type="button" class="secondary-button compact-action docker-action" data-action="restart" ${disabled}>Restart</button>
+        <button type="button" class="secondary-button compact-action docker-action" data-action="stop" ${disabled}>Stop</button>
       </td>
     </tr>`;
   }
@@ -33,7 +33,7 @@
     }
     const rows = (data.containers || []).map(c => containerRow(host, c)).join('');
     return `<section class="card dashboard-card"><div class="panel-heading"><h2>${esc(label)}</h2><span class="status-pill good">${(data.containers || []).length} containers</span></div>
-      <div class="table-wrap"><table class="settings-table"><thead><tr><th>Container</th><th>Status</th><th>CPU</th><th>Memory</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="muted">No containers</td></tr>'}</tbody></table></div>
+      <div class="table-wrap"><table class="settings-table docker-table"><thead><tr><th>Container</th><th>Status</th><th>CPU</th><th>Memory</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="muted">No containers</td></tr>'}</tbody></table></div>
     </section>`;
   }
 
@@ -62,7 +62,7 @@
       <td><strong>${esc(PROCESS_LABELS[p.name] || p.name)}</strong></td>
       <td><span class="status-pill ${state}">${text}</span></td>
       <td>${p.process_count ?? 0}</td>
-      <td class="button-grid"><button type="button" class="secondary-button plexmania-restart">Restart</button></td>
+      <td class="docker-actions"><button type="button" class="secondary-button compact-action plexmania-restart">Restart</button></td>
     </tr>`;
   }
 
@@ -75,7 +75,7 @@
     }
     const rows = (data.processes || []).map(processRow).join('');
     return `<section class="card dashboard-card"><div class="panel-heading"><h2>plexmania (Windows)</h2><span class="status-pill good">${(data.processes || []).length} apps</span></div>
-      <div class="table-wrap"><table class="settings-table"><thead><tr><th>App</th><th>Status</th><th>Processes</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="muted">No data</td></tr>'}</tbody></table></div>
+      <div class="table-wrap"><table class="settings-table docker-table"><thead><tr><th>App</th><th>Status</th><th>Processes</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="muted">No data</td></tr>'}</tbody></table></div>
     </section>`;
   }
 
