@@ -144,12 +144,13 @@ textarea { resize: vertical; min-height: 82px; }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent); }
 .switch-line { display: flex; align-items: center; gap: 10px; color: var(--text); }
-.integration-group-label { margin: 28px 0 4px; padding-top: 18px; border-top: 1px solid var(--border); font-size: .8rem; font-weight: 800; color: var(--text); }
-.integration-group-label:first-of-type { margin-top: 4px; padding-top: 0; border-top: 0; }
+.integration-group-label, .settings-group-label { margin: 28px 0 4px; padding-top: 18px; border-top: 1px solid var(--border); font-size: .8rem; font-weight: 800; color: var(--text); }
+.integration-group-label:first-of-type, .settings-group-label:first-of-type { margin-top: 4px; padding-top: 0; border-top: 0; }
 .integration-group-hint { margin: 0 0 4px; font-size: .72rem; }
 .integration-group-hint a { color: var(--accent); }
-.integration-subgroup-label { margin: 16px 0 -2px; font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-.integration-subgroup-label:first-of-type { margin-top: 6px; }
+.integration-subgroup-label, .settings-subgroup-label { margin: 16px 0 -2px; font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.integration-subgroup-label:first-of-type, .settings-subgroup-label:first-of-type { margin-top: 6px; }
+.field-grid + .settings-subgroup-label, .field-grid + .settings-group-label { margin-top: 20px; }
 .integration-block { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 14px; background: rgba(0,0,0,.08); }
 .integration-title { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 14px; }
 .integration-title > div { display: grid; gap: 4px; }
