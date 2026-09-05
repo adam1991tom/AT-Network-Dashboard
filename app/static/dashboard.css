@@ -25,6 +25,7 @@ p { color: var(--muted); line-height: 1.55; font-size: .78rem; }
 .rail-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--status-good); position: absolute; top: 14px; left: 14px; box-shadow: 0 0 10px rgba(74,222,128,.6); }
 .rail-brand-text { color: #fff; font-weight: 900; letter-spacing: -.04em; font-size: .9rem; }
 .rail-nav { width: 100%; display: grid; gap: 4px; padding: 10px 7px; align-items: stretch; }
+.rail-divider { height: 1px; background: var(--border); margin: 6px 10px; }
 .rail-nav-bottom { margin-top: auto; padding-bottom: 14px; }
 .rail-link {
   min-height: 44px; border-radius: var(--radius-md); color: #7f8b99; text-decoration: none;
