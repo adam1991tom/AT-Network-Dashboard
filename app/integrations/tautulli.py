@@ -26,6 +26,9 @@ class TautulliClient:
     def libraries(self) -> list[dict]:
         return self._cmd("get_libraries") or []
 
+    def terminate_session(self, session_id: str, message: str = "") -> dict:
+        return self._cmd("terminate_session", session_id=session_id, message=message or "Stopped from AT Network Dashboard")
+
     def test_connection(self) -> dict:
         try:
             data = self.activity()
@@ -44,6 +47,7 @@ class TautulliClient:
             "total_bandwidth_kbps": activity.get("total_bandwidth"),
             "sessions": [
                 {
+                    "session_id": s.get("session_key"),
                     "user": s.get("user"),
                     "title": s.get("full_title"),
                     "state": s.get("state"),

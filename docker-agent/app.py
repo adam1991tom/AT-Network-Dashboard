@@ -35,11 +35,32 @@ def _cpu_percent(stats: dict) -> float | None:
 
 
 def _container_info(c) -> dict:
+    attrs = c.attrs or {}
+    state = attrs.get("State") or {}
+    host_config = attrs.get("HostConfig") or {}
+    network_settings = attrs.get("NetworkSettings") or {}
+    ports = []
+    for container_port, bindings in (network_settings.get("Ports") or {}).items():
+        for b in bindings or []:
+            ports.append(f"{b.get('HostIp') or '0.0.0.0'}:{b.get('HostPort')}->{container_port}")
+    networks = list((network_settings.get("Networks") or {}).keys())
+    ip_address = next((n.get("IPAddress") for n in (network_settings.get("Networks") or {}).values() if n.get("IPAddress")), None)
+    labels = c.labels or {}
     info = {
         "id": c.short_id,
         "name": c.name,
         "image": (c.image.tags[0] if c.image and c.image.tags else (c.image.short_id if c.image else "")),
         "status": c.status,
+        "health": (state.get("Health") or {}).get("Status"),
+        "created": attrs.get("Created"),
+        "started_at": state.get("StartedAt"),
+        "restart_count": attrs.get("RestartCount", 0),
+        "restart_policy": (host_config.get("RestartPolicy") or {}).get("Name"),
+        "ports": ports,
+        "networks": networks,
+        "ip_address": ip_address,
+        "compose_project": labels.get("com.docker.compose.project"),
+        "compose_service": labels.get("com.docker.compose.service"),
         "cpu_percent": None,
         "mem_usage_mb": None,
         "mem_limit_mb": None,
@@ -103,3 +124,9 @@ def stop_container(container_id: str) -> dict:
 def restart_container(container_id: str) -> dict:
     _get_container(container_id).restart(timeout=15)
     return {"ok": True}
+
+
+@app.get("/containers/{container_id}/logs", dependencies=[Depends(verify_token)])
+def container_logs(container_id: str, lines: int = 200) -> dict:
+    raw = _get_container(container_id).logs(tail=min(max(lines, 1), 1000), timestamps=True)
+    return {"logs": raw.decode("utf-8", errors="replace")}

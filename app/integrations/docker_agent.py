@@ -42,6 +42,15 @@ class DockerAgentClient:
     def restart(self, container_id: str) -> dict:
         return self._action(container_id, "restart")
 
+    def logs(self, container_id: str, lines: int = 200, timeout: int = 15) -> dict:
+        if not self.base_url:
+            raise ValueError("Enter the agent URL")
+        if not self.token:
+            raise ValueError("Enter the agent token")
+        response = requests.get(f"{self.base_url}/containers/{container_id}/logs", headers=self._headers(), params={"lines": lines}, timeout=timeout)
+        response.raise_for_status()
+        return response.json()
+
     def test_connection(self) -> dict:
         try:
             data = self.containers()

@@ -30,6 +30,27 @@ class PlexClient:
     def sessions(self) -> list[dict]:
         return self._get("/status/sessions").get("Metadata") or []
 
+    def _action(self, path: str, params: dict, timeout: int = 15) -> dict:
+        if not self.base_url:
+            raise ValueError("Enter the Plex server URL")
+        if not self.token:
+            raise ValueError("Enter the Plex token")
+        response = requests.get(f"{self.base_url}{path}", params={**params, "X-Plex-Token": self.token}, timeout=timeout)
+        response.raise_for_status()
+        return {"ok": True}
+
+    def refresh_section(self, key: str) -> dict:
+        if not self.base_url:
+            raise ValueError("Enter the Plex server URL")
+        if not self.token:
+            raise ValueError("Enter the Plex token")
+        response = requests.put(f"{self.base_url}/library/sections/{key}/refresh", params={"X-Plex-Token": self.token}, timeout=15)
+        response.raise_for_status()
+        return {"ok": True}
+
+    def terminate_session(self, session_id: str, reason: str = "") -> dict:
+        return self._action("/status/sessions/terminate", {"sessionId": session_id, "reason": reason or "Stopped from AT Network Dashboard"})
+
     def test_connection(self) -> dict:
         try:
             data = self.identity()
@@ -45,6 +66,7 @@ class PlexClient:
             "stream_count": len(sessions),
             "sessions": [
                 {
+                    "session_id": (s.get("Session") or {}).get("id"),
                     "user": (s.get("User") or {}).get("title"),
                     "title": s.get("grandparentTitle") and f"{s.get('grandparentTitle')} - {s.get('title')}" or s.get("title"),
                     "state": (s.get("Player") or {}).get("state"),
@@ -52,5 +74,5 @@ class PlexClient:
                 }
                 for s in sessions
             ],
-            "libraries": [{"name": sec.get("title"), "type": sec.get("type")} for sec in sections],
+            "libraries": [{"key": sec.get("key"), "name": sec.get("title"), "type": sec.get("type")} for sec in sections],
         }

@@ -94,6 +94,7 @@ p { color: var(--muted); line-height: 1.55; font-size: .78rem; }
 .overview-action { display: block; text-decoration: none; color: inherit; padding: 20px; min-height: 150px; transition: transform .15s ease, border-color .15s ease; }
 .overview-action h2 { margin: 0 0 8px; }
 .overview-action p { margin: 0 0 18px; }
+.overview-widget .media-card-list { max-height: 160px; margin: 0; }
 .dashboard-link:hover { transform: translateY(-1px); border-color: var(--accent); }
 .info-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; align-items: start; }
 .system-grid, .security-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
@@ -120,6 +121,18 @@ p { color: var(--muted); line-height: 1.55; font-size: .78rem; }
 .media-card-list { display: grid; gap: 6px; max-height: 190px; overflow-y: auto; margin: 6px 0; padding-right: 2px; }
 .media-card-list .setting-row { padding: 8px 10px; }
 .media-card-footer { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 6px; }
+.media-card-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.media-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.icon-action { border: 1px solid var(--accent-border); background: transparent; color: var(--text); border-radius: var(--radius-sm); padding: 6px 10px; font-size: .7rem; cursor: pointer; }
+.icon-action:hover { background: var(--accent-soft); }
+.icon-action:disabled { opacity: .55; cursor: wait; }
+.icon-action.media-danger { color: var(--status-bad); border-color: rgba(239,68,68,.3); }
+.media-actions { position: relative; display: inline-block; }
+.media-actions summary { list-style: none; cursor: pointer; }
+.media-actions summary::-webkit-details-marker { display: none; }
+.media-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 20; display: flex; flex-direction: column; min-width: 180px; max-height: 240px; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(0,0,0,.35); padding: 4px; }
+.media-menu-item { text-align: left; background: transparent; border: none; color: var(--text); padding: 8px 10px; font-size: .75rem; border-radius: var(--radius-sm); cursor: pointer; }
+.media-menu-item:hover { background: var(--accent-soft); }
 
 /* ---------- settings ---------- */
 .settings-layout { display: grid; grid-template-columns: 210px minmax(0,1fr); gap: 10px; align-items: start; }
@@ -192,6 +205,10 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent);
 .docker-table th:last-child, .docker-table td:last-child { width: 1%; white-space: nowrap; }
 .docker-actions { display: flex; gap: 6px; flex-wrap: nowrap; }
 .docker-table tbody tr:hover { background: rgba(255,255,255,.02); }
+.docker-ports { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .72rem; color: var(--muted); }
+.docker-log-modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+.docker-log-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); width: min(900px, 100%); max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
+.docker-log-body { flex: 1; overflow: auto; margin: 0; padding: 14px; font-size: .72rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; background: var(--surface-2); }
 
 .monitor-summary { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 12px; }
 .monitor-status-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }

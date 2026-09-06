@@ -119,6 +119,18 @@ def docker_action(host: str, container_id: str, action: str) -> JSONResponse:
         return JSONResponse({"ok": False, "message": str(exc)}, status_code=502)
 
 
+@router.get("/api/docker/{host}/containers/{container_id}/logs")
+def docker_logs(host: str, container_id: str, lines: int = 200) -> JSONResponse:
+    client, error = _client_from_payload(host, {})
+    if error:
+        return JSONResponse(error, status_code=400)
+    try:
+        result = client.logs(container_id, lines=lines)
+        return JSONResponse(result)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "message": str(exc)}, status_code=502)
+
+
 @router.post("/api/plexmania/processes/{name}/restart")
 def plexmania_restart(name: str) -> JSONResponse:
     client, error = _plexmania_from_payload({})

@@ -7,18 +7,42 @@
     return `<span class="status-pill ${state}">${esc(status).toUpperCase()}</span>`;
   }
 
+  function healthPill(health) {
+    if (!health || health === 'none') return '';
+    const state = health === 'healthy' ? 'good' : health === 'starting' ? 'warn' : 'bad';
+    return `<span class="status-pill ${state}">${esc(health).toUpperCase()}</span>`;
+  }
+
+  function uptime(startedAt) {
+    if (!startedAt || startedAt.startsWith('0001-01-01')) return '—';
+    const ms = Date.now() - new Date(startedAt).getTime();
+    if (ms < 0) return '—';
+    const mins = Math.floor(ms / 60000);
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ${mins % 60}m`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ${hours % 24}h`;
+  }
+
   function containerRow(host, c) {
     const disabled = c.status === 'running' ? '' : 'style="display:none"';
     const startDisabled = c.status === 'running' ? 'style="display:none"' : '';
+    const composeTag = c.compose_project ? `<br><small class="muted">${esc(c.compose_project)}${c.compose_service ? ' · ' + esc(c.compose_service) : ''}</small>` : '';
+    const restarts = c.restart_count ? `<br><small class="muted">${c.restart_count} restart${c.restart_count === 1 ? '' : 's'}</small>` : '';
+    const ports = (c.ports || []).join(', ');
     return `<tr data-id="${esc(c.id)}" data-host="${esc(host)}">
-      <td><strong>${esc(c.name)}</strong><br><small class="muted">${esc(c.image)}</small></td>
-      <td>${statusPill(c.status)}</td>
+      <td><strong>${esc(c.name)}</strong><br><small class="muted">${esc(c.image)}</small>${composeTag}</td>
+      <td>${statusPill(c.status)} ${healthPill(c.health)}</td>
+      <td>${c.status === 'running' ? uptime(c.started_at) : '—'}${restarts}</td>
       <td>${c.cpu_percent != null ? c.cpu_percent + '%' : '—'}</td>
       <td>${c.mem_usage_mb != null ? c.mem_usage_mb.toFixed(0) + ' / ' + (c.mem_limit_mb ? c.mem_limit_mb.toFixed(0) : '∞') + ' MB' : '—'}</td>
+      <td class="docker-ports" title="${esc(ports)}">${ports ? esc(ports) : '—'}</td>
       <td class="docker-actions">
         <button type="button" class="secondary-button compact-action docker-action" data-action="start" ${startDisabled}>Start</button>
         <button type="button" class="secondary-button compact-action docker-action" data-action="restart" ${disabled}>Restart</button>
         <button type="button" class="secondary-button compact-action docker-action" data-action="stop" ${disabled}>Stop</button>
+        <button type="button" class="secondary-button compact-action docker-logs">Logs</button>
       </td>
     </tr>`;
   }
@@ -33,8 +57,31 @@
     }
     const rows = (data.containers || []).map(c => containerRow(host, c)).join('');
     return `<section class="card dashboard-card"><div class="panel-heading"><h2>${esc(label)}</h2><span class="status-pill good">${(data.containers || []).length} containers</span></div>
-      <div class="table-wrap"><table class="settings-table docker-table"><thead><tr><th>Container</th><th>Status</th><th>CPU</th><th>Memory</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="muted">No containers</td></tr>'}</tbody></table></div>
+      <div class="table-wrap"><table class="settings-table docker-table"><thead><tr><th>Container</th><th>Status</th><th>Uptime</th><th>CPU</th><th>Memory</th><th>Ports</th><th>Actions</th></tr></thead><tbody>${rows || '<tr><td colspan="7" class="muted">No containers</td></tr>'}</tbody></table></div>
     </section>`;
+  }
+
+  function closeLogModal() {
+    document.getElementById('docker_log_modal')?.remove();
+  }
+
+  async function showLogs(host, id, name) {
+    const modal = document.createElement('div');
+    modal.id = 'docker_log_modal';
+    modal.className = 'docker-log-modal';
+    modal.innerHTML = `<div class="docker-log-box"><div class="panel-heading"><h2>${esc(name)} · logs</h2><button type="button" class="secondary-button compact-action" id="docker_log_close">Close</button></div><pre class="docker-log-body">Loading…</pre></div>`;
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeLogModal(); });
+    document.body.appendChild(modal);
+    document.getElementById('docker_log_close').addEventListener('click', closeLogModal);
+    try {
+      const response = await fetch(`/api/docker/${host}/containers/${id}/logs?lines=300`, { cache: 'no-store' });
+      const data = await response.json();
+      const body = modal.querySelector('.docker-log-body');
+      body.textContent = data.logs || data.message || 'No logs available.';
+      body.scrollTop = body.scrollHeight;
+    } catch (e) {
+      modal.querySelector('.docker-log-body').textContent = 'Failed to load logs: ' + e.message;
+    }
   }
 
   async function doAction(host, id, action, button) {
@@ -122,6 +169,12 @@
         btn.addEventListener('click', () => {
           const row = btn.closest('tr');
           doAction(row.dataset.host, row.dataset.id, btn.dataset.action, btn);
+        });
+      });
+      container.querySelectorAll('.docker-logs').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const row = btn.closest('tr');
+          showLogs(row.dataset.host, row.dataset.id, row.querySelector('strong')?.textContent || row.dataset.id);
         });
       });
       container.querySelectorAll('.plexmania-restart').forEach(btn => {

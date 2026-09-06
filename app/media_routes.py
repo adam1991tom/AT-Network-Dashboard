@@ -31,14 +31,14 @@ def _sonarr_from_payload(payload: dict):
     cfg = all_settings(); url = str(payload.get("sonarr_url") or cfg.get("sonarr_url") or "").strip(); key = str(payload.get("sonarr_api_key") or "").strip() or (get_secret("sonarr_api_key") or "")
     if not url: return None, {"ok": False, "message": "Enter the Sonarr URL"}
     if not key: return None, {"ok": False, "message": "Enter the Sonarr API key"}
-    return ArrClient(url, key, "v3"), None
+    return ArrClient(url, key, "v3", kind="sonarr"), None
 
 
 def _radarr_from_payload(payload: dict):
     cfg = all_settings(); url = str(payload.get("radarr_url") or cfg.get("radarr_url") or "").strip(); key = str(payload.get("radarr_api_key") or "").strip() or (get_secret("radarr_api_key") or "")
     if not url: return None, {"ok": False, "message": "Enter the Radarr URL"}
     if not key: return None, {"ok": False, "message": "Enter the Radarr API key"}
-    return ArrClient(url, key, "v3"), None
+    return ArrClient(url, key, "v3", kind="radarr"), None
 
 
 def _prowlarr_from_payload(payload: dict):
@@ -104,6 +104,126 @@ def _make_test_route(name: str, builder):
 
 for _name, _builder in _SERVICES.items():
     router.add_api_route(f"/api/settings/test/{_name}", _make_test_route(_name, _builder), methods=["POST"])
+
+
+def _arr_dispatch(client: ArrClient, payload: dict) -> dict:
+    action = payload.get("action")
+    try:
+        if action == "rss_sync":
+            client.rss_sync(); return {"ok": True, "message": "RSS sync triggered"}
+        if action == "missing_search":
+            client.missing_search(); return {"ok": True, "message": "Missing content search triggered"}
+        if action == "remove_queue_item":
+            client.remove_queue_item(payload.get("queue_id")); return {"ok": True, "message": "Removed from queue"}
+        return {"ok": False, "message": f"Unknown action: {action}"}
+    except Exception as exc:
+        return {"ok": False, "message": str(exc)}
+
+
+async def _sonarr_action(payload: dict) -> dict:
+    client, error = _sonarr_from_payload({})
+    if error: return error
+    return _arr_dispatch(client, payload)
+
+
+async def _radarr_action(payload: dict) -> dict:
+    client, error = _radarr_from_payload({})
+    if error: return error
+    return _arr_dispatch(client, payload)
+
+
+async def _prowlarr_action(payload: dict) -> dict:
+    client, error = _prowlarr_from_payload({})
+    if error: return error
+    action = payload.get("action")
+    try:
+        if action == "test_all":
+            result = client.test_all_indexers(); return {"ok": True, "message": f"Tested {result['tested']} indexers, {result['failing']} failing"}
+        return {"ok": False, "message": f"Unknown action: {action}"}
+    except Exception as exc:
+        return {"ok": False, "message": str(exc)}
+
+
+async def _sabnzbd_action(payload: dict) -> dict:
+    client, error = _sabnzbd_from_payload({})
+    if error: return error
+    action = payload.get("action")
+    try:
+        if action == "pause_queue":
+            client.pause_queue(); return {"ok": True, "message": "Queue paused"}
+        if action == "resume_queue":
+            client.resume_queue(); return {"ok": True, "message": "Queue resumed"}
+        if action == "pause_job":
+            client.pause_job(payload.get("nzo_id")); return {"ok": True, "message": "Download paused"}
+        if action == "resume_job":
+            client.resume_job(payload.get("nzo_id")); return {"ok": True, "message": "Download resumed"}
+        if action == "delete_job":
+            client.delete_job(payload.get("nzo_id")); return {"ok": True, "message": "Download removed"}
+        return {"ok": False, "message": f"Unknown action: {action}"}
+    except Exception as exc:
+        return {"ok": False, "message": str(exc)}
+
+
+async def _tautulli_action(payload: dict) -> dict:
+    client, error = _tautulli_from_payload({})
+    if error: return error
+    action = payload.get("action")
+    try:
+        if action == "terminate_session":
+            client.terminate_session(payload.get("session_id"), payload.get("message", "")); return {"ok": True, "message": "Session terminated"}
+        return {"ok": False, "message": f"Unknown action: {action}"}
+    except Exception as exc:
+        return {"ok": False, "message": str(exc)}
+
+
+async def _plex_action(payload: dict) -> dict:
+    client, error = _plex_from_payload({})
+    if error: return error
+    action = payload.get("action")
+    try:
+        if action == "refresh_section":
+            client.refresh_section(payload.get("key")); return {"ok": True, "message": "Library refresh started"}
+        if action == "terminate_session":
+            client.terminate_session(payload.get("session_id"), payload.get("reason", "")); return {"ok": True, "message": "Session terminated"}
+        return {"ok": False, "message": f"Unknown action: {action}"}
+    except Exception as exc:
+        return {"ok": False, "message": str(exc)}
+
+
+async def _nexroll_action(payload: dict) -> dict:
+    client, error = _nexroll_from_payload({})
+    if error: return error
+    action = payload.get("action")
+    try:
+        if action == "sync_plex":
+            client.sync_plex(); return {"ok": True, "message": "Plex sync triggered"}
+        if action == "apply_category":
+            client.apply_category(payload.get("category_id")); return {"ok": True, "message": "Category applied"}
+        return {"ok": False, "message": f"Unknown action: {action}"}
+    except Exception as exc:
+        return {"ok": False, "message": str(exc)}
+
+
+_ACTIONS = {
+    "sonarr": _sonarr_action,
+    "radarr": _radarr_action,
+    "prowlarr": _prowlarr_action,
+    "sabnzbd": _sabnzbd_action,
+    "tautulli": _tautulli_action,
+    "plex": _plex_action,
+    "nexroll": _nexroll_action,
+}
+
+
+async def _media_action(service: str, request: Request) -> dict:
+    handler = _ACTIONS.get(service)
+    if not handler:
+        return {"ok": False, "message": f"No controls available for {service}"}
+    payload = await request.json()
+    return await handler(payload)
+
+
+router.add_api_route("/api/media/{service}/action", _media_action, methods=["POST"])
 
 
 @router.get("/api/media/summary")
