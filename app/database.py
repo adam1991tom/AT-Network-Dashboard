@@ -104,6 +104,8 @@ def initialise() -> None:
         CREATE INDEX IF NOT EXISTS idx_ai_reports_ts ON ai_reports(ts);
         CREATE TABLE IF NOT EXISTS ai_chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, role TEXT NOT NULL, message TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_ai_chat_log_ts ON ai_chat_log(ts);
+        CREATE TABLE IF NOT EXISTS maintenance_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, started_at TEXT NOT NULL, finished_at TEXT, status TEXT NOT NULL DEFAULT 'running', log_excerpt TEXT NOT NULL DEFAULT '', ai_summary TEXT NOT NULL DEFAULT '');
+        CREATE INDEX IF NOT EXISTS idx_maintenance_runs_started ON maintenance_runs(started_at);
         """)
         for table, column, definition in [
             ("ups_history", "runtime_seconds", "REAL"),
@@ -116,6 +118,7 @@ def initialise() -> None:
             ("remediation_actions", "source", "TEXT NOT NULL DEFAULT 'rule'"),
             ("remediation_actions", "explanation", "TEXT NOT NULL DEFAULT ''"),
             ("remediation_actions", "confidence", "REAL"),
+            ("ai_reports", "report_type", "TEXT NOT NULL DEFAULT 'incident_summary'"),
         ]:
             _ensure_column(con, table, column, definition)
         con.execute("CREATE INDEX IF NOT EXISTS idx_incidents_key_active ON incidents(incident_key,active)")

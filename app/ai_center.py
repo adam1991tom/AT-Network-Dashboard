@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import threading
+import time
+from datetime import datetime, timezone
 from typing import Any
 
 from app import remediation
@@ -344,7 +347,90 @@ def generate_report(hours: int = 24) -> dict[str, Any]:
 
     con = connect()
     try:
-        con.execute("INSERT INTO ai_reports(window_hours,report_text) VALUES (?,?)", (hours, text))
+        con.execute("INSERT INTO ai_reports(window_hours,report_text,report_type) VALUES (?,?,'incident_summary')", (hours, text))
+        con.commit()
+    finally:
+        con.close()
+    return {"ok": True, "report": text}
+
+
+def _gather_trends(hours: int) -> str:
+    con = connect()
+    try:
+        wifi_rows = con.execute(
+            "SELECT ap_name,band,AVG(retries) avg_retries,MAX(retries) max_retries,AVG(utilization) avg_util,AVG(clients) avg_clients "
+            "FROM wifi_history WHERE datetime(ts) >= datetime('now', ?) GROUP BY ap_name,band ORDER BY max_retries DESC",
+            (f"-{hours} hours",),
+        ).fetchall()
+        speed_row = con.execute(
+            "SELECT AVG(download) avg_down,MIN(download) min_down,AVG(upload) avg_up,AVG(latency) avg_latency,COUNT(*) n "
+            "FROM speedtest_history WHERE datetime(ts) >= datetime('now', ?)",
+            (f"-{hours} hours",),
+        ).fetchone()
+        gw_row = con.execute(
+            "SELECT AVG(cpu) avg_cpu,MAX(cpu) max_cpu,AVG(memory) avg_mem,MAX(memory) max_mem,AVG(temperature) avg_temp,"
+            "SUM(rx_errors+tx_errors+rx_dropped+tx_dropped) total_errors FROM gateway_history WHERE datetime(ts) >= datetime('now', ?)",
+            (f"-{hours} hours",),
+        ).fetchone()
+        resolved_incident_count = con.execute(
+            "SELECT COUNT(*) FROM incidents WHERE active=0 AND datetime(started_at) >= datetime('now', ?)", (f"-{hours} hours",)
+        ).fetchone()[0]
+    finally:
+        con.close()
+
+    lines = [f"=== Wi-Fi trend by AP/band over the last {hours}h ==="]
+    for row in wifi_rows:
+        lines.append(
+            f"- {row['ap_name']} {row['band']}: avg retries {row['avg_retries']:.1f}%, peak {row['max_retries']:.1f}%, "
+            f"avg utilisation {row['avg_util']:.0f}%, avg clients {row['avg_clients']:.1f}"
+        )
+    if not wifi_rows:
+        lines.append("(no Wi-Fi samples in this window)")
+
+    lines.append("\n=== ISP speed trend ===")
+    if speed_row and speed_row["n"]:
+        lines.append(
+            f"Avg download {speed_row['avg_down']:.0f} Mbps, worst {speed_row['min_down']:.0f} Mbps, "
+            f"avg upload {speed_row['avg_up']:.0f} Mbps, avg latency {speed_row['avg_latency']:.0f} ms, over {speed_row['n']} tests"
+        )
+    else:
+        lines.append("(no speed tests in this window)")
+
+    lines.append("\n=== Gateway trend ===")
+    if gw_row and gw_row["avg_cpu"] is not None:
+        lines.append(
+            f"Avg CPU {gw_row['avg_cpu']:.0f}% (peak {gw_row['max_cpu']:.0f}%), avg memory {gw_row['avg_mem']:.0f}% (peak {gw_row['max_mem']:.0f}%), "
+            f"avg temperature {gw_row['avg_temp']:.0f}°C, total interface errors/drops {int(gw_row['total_errors'] or 0)}"
+        )
+    else:
+        lines.append("(no gateway samples in this window)")
+
+    lines.append(f"\n=== Incidents that resolved on their own or were auto-fixed in this window: {resolved_incident_count} ===")
+    return "\n".join(lines)
+
+
+def generate_network_health_report(hours: int = 168) -> dict[str, Any]:
+    client, error = _gemini_client()
+    if error:
+        return error
+    hours = max(24, min(int(hours or 168), 24 * 90))
+    trends = _gather_trends(hours)
+    prompt = (
+        "You are a network engineer reviewing trend data for a home network, covering the last "
+        f"{hours} hours, to proactively spot problems before they become incidents — not just reacting to alerts. "
+        "Look for things like: an AP/band with persistently high retries or utilisation (candidate for a channel or "
+        "channel-width change, or repositioning), a speed trend that's degrading, or a gateway resource trending "
+        "toward its limit. Write a short, specific report (150-300 words) with concrete recommendations where "
+        "something stands out — if everything genuinely looks healthy, say so briefly rather than inventing "
+        "concerns.\n\n" + trends
+    )
+    result = client.chat(prompt, max_tokens=1200)
+    if not result.get("ok"):
+        return result
+    text = result["text"]
+    con = connect()
+    try:
+        con.execute("INSERT INTO ai_reports(window_hours,report_text,report_type) VALUES (?,?,'network_health')", (hours, text))
         con.commit()
     finally:
         con.close()
@@ -355,8 +441,51 @@ def recent_reports(limit: int = 20) -> list[dict[str, Any]]:
     con = connect()
     try:
         rows = con.execute(
-            "SELECT id,ts,window_hours,report_text FROM ai_reports ORDER BY id DESC LIMIT ?", (max(1, min(limit, 100)),)
+            "SELECT id,ts,window_hours,report_text,report_type FROM ai_reports ORDER BY id DESC LIMIT ?", (max(1, min(limit, 100)),)
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
         con.close()
+
+
+_health_worker_started = False
+_health_worker_lock = threading.Lock()
+HEALTH_CHECK_INTERVAL_SECONDS = 3600  # hourly check for whether a day has passed
+
+
+def _health_report_due(cfg: dict[str, Any]) -> bool:
+    if not remediation._bool(cfg.get("network_health_report_enabled")):
+        return False
+    con = connect()
+    try:
+        row = con.execute("SELECT ts FROM ai_reports WHERE report_type='network_health' ORDER BY id DESC LIMIT 1").fetchone()
+    finally:
+        con.close()
+    if not row:
+        return True
+    try:
+        last = datetime.fromisoformat(str(row["ts"]))
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return True
+    return (datetime.now(timezone.utc) - last).total_seconds() >= 86400
+
+
+def _health_worker() -> None:
+    while True:
+        try:
+            if _health_report_due(all_settings()):
+                generate_network_health_report(168)
+        except Exception as exc:
+            print(f"ai_center: health report check failed: {exc}")
+        time.sleep(HEALTH_CHECK_INTERVAL_SECONDS)
+
+
+def start_health_report_scheduler() -> None:
+    global _health_worker_started
+    with _health_worker_lock:
+        if _health_worker_started:
+            return
+        threading.Thread(target=_health_worker, name="at-health-report-scheduler", daemon=True).start()
+        _health_worker_started = True

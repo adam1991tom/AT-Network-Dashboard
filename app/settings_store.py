@@ -25,6 +25,8 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "auto_remediation_enabled":"false","auto_remediation_cooldown_minutes":"60",
     "ai_enabled":"false","ai_model":"gemini-3.6-flash","ai_autonomous_enabled":"false","ai_autonomous_cooldown_minutes":"30",
     "shell_agent_enabled":"false","shell_agent_url":"http://shell-agent:8299","ai_shell_max_actions_per_hour":"6",
+    "maintenance_schedule_enabled":"false","maintenance_schedule_days":"7","maintenance_script_path":"/home/adam/smart_maintenance.sh","maintenance_last_run_at":"",
+    "network_health_report_enabled":"false",
     "maintenance_mode":"false","retention_days":"365","session_hours":"8","update_channel":"stable","auto_update_check":"true","notify_update_available":"true","setup_complete":"false",
 }
 SECRET_KEYS={"unifi_api_key","discord_webhook","uptime_kuma_api_key","sonarr_api_key","radarr_api_key","prowlarr_api_key","sabnzbd_api_key","tautulli_api_key","plex_token","nexroll_api_key","docker_agent_newtiny_token","docker_agent_beast_token","plexmania_agent_token","whatsapp_api_key","gemini_api_key","shell_agent_token"}; INSTALL_KEY_PATH=Path("/data/install.key")

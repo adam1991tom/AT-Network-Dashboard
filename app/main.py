@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from app import ai_center
+from app import ai_center, maintenance
 from app.auth import COOKIE_NAME, change_password, create_admin, has_admin, login, logout, session_user
 from app.config import CONFIG
 from app.database import DB_PATH, initialise
@@ -70,7 +70,7 @@ def _kuma_from_payload(payload: dict) -> tuple[UptimeKumaClient | None, dict | N
     return UptimeKumaClient(url,slug,key,verify),None
 
 @app.on_event("startup")
-def startup() -> None: initialise(); start_monitoring(); start_infra_monitoring()
+def startup() -> None: initialise(); start_monitoring(); start_infra_monitoring(); maintenance.start_maintenance_scheduler(); ai_center.start_health_report_scheduler()
 
 CSRF_COOKIE_NAME = "at_csrf"
 _CSRF_EXEMPT_PATHS = {"/api/health", "/login", "/setup-admin"}
@@ -244,6 +244,21 @@ async def api_ai_report(request:Request)->dict:
     return result
 @app.get("/api/ai/reports")
 def api_ai_reports()->dict:return {"items":ai_center.recent_reports(20)}
+@app.post("/api/maintenance/run-now")
+def api_maintenance_run_now()->dict:
+    result=maintenance.run_now()
+    if not result.get("ok"):return JSONResponse(result,status_code=400)
+    return result
+@app.get("/api/maintenance/runs")
+def api_maintenance_runs()->dict:return {"items":maintenance.recent_runs(20)}
+@app.post("/api/ai/health-report")
+async def api_ai_health_report(request:Request)->dict:
+    payload=await request.json()
+    try:hours=int(payload.get("hours") or 168)
+    except Exception:hours=168
+    result=ai_center.generate_network_health_report(hours)
+    if not result.get("ok"):return JSONResponse(result,status_code=400)
+    return result
 @app.get("/ai-center",response_class=HTMLResponse)
 def ai_center_page(request:Request)->HTMLResponse:return HTMLResponse(templates.get_template("ai_center.html").render(request=request,version=VERSION,page="ai-center",title="AI Center"))
 @app.post("/api/settings/test/ping")

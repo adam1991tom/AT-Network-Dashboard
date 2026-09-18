@@ -12,11 +12,12 @@ const textFields = [
   'wifi_warning_threshold','wifi_major_threshold','wifi_critical_threshold','wifi_persist_minutes','wifi_recovery_threshold','wifi_recovery_minutes',
   'notification_min_severity','notification_cooldown_minutes','retention_days','session_hours','update_channel',
   'whatsapp_base_url','whatsapp_session_id','whatsapp_chat_id','whatsapp_min_severity','whatsapp_cooldown_minutes','auto_remediation_cooldown_minutes',
-  'ai_model','ai_autonomous_cooldown_minutes','shell_agent_url','ai_shell_max_actions_per_hour'
+  'ai_model','ai_autonomous_cooldown_minutes','shell_agent_url','ai_shell_max_actions_per_hour','maintenance_schedule_days','maintenance_script_path'
 ];
 const checkboxFields = [
   'isp_enabled','speedtest_auto_enabled','unifi_enabled','ups_enabled','discord_enabled','notify_internet','notify_wifi','notify_power','notify_gateway','notify_system',
-  'maintenance_mode','auto_update_check','notify_update_available','whatsapp_enabled','auto_remediation_enabled','ai_enabled','ai_autonomous_enabled','shell_agent_enabled'
+  'maintenance_mode','auto_update_check','notify_update_available','whatsapp_enabled','auto_remediation_enabled','ai_enabled','ai_autonomous_enabled','shell_agent_enabled',
+  'maintenance_schedule_enabled','network_health_report_enabled'
 ];
 
 function activatePanel(panelId){

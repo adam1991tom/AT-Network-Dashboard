@@ -75,6 +75,19 @@
         </div>
         <p class="muted">Every AI diagnosis is logged whether or not this is on. Turn this on only after reviewing a few diagnoses on the AI Center page.</p>
       </div>
+      <h3 class="settings-subgroup-label">Server Maintenance</h3>
+      <div class="integration-block">
+        <div class="integration-title"><div><strong>Scheduled Maintenance</strong><span class="muted">Runs your smart_maintenance.sh script on a schedule (OS + Docker image updates, safe by that script's own design — never deletes, never reboots). Requires the Shell Agent above.</span></div><input id="maintenance_schedule_enabled" type="checkbox"></div>
+        <div class="field-grid">
+          <label>Every N days<input id="maintenance_schedule_days" type="number" min="1"></label>
+          <label>Script path on the host<input id="maintenance_script_path" placeholder="/home/adam/smart_maintenance.sh"></label>
+        </div>
+        <p class="muted">Runs can take many minutes. Progress and an AI summary appear on the AI Center page once each run finishes.</p>
+      </div>
+      <h3 class="settings-subgroup-label">Network Health</h3>
+      <div class="integration-block">
+        <div class="integration-title"><div><strong>Daily Network Health Report</strong><span class="muted">Once a day, the AI reviews Wi-Fi/gateway/speedtest trends (not just open incidents) and writes a proactive health report, visible on the AI Center page.</span></div><input id="network_health_report_enabled" type="checkbox"></div>
+      </div>
     </section>
 
     <section class="card settings-content settings-panel" id="isp">

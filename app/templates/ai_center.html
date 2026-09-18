@@ -12,13 +12,23 @@
 </section>
 
 <section class="card dashboard-card">
-  <div class="panel-heading"><div><h2>Reports</h2><p>A plain-English summary of what happened, generated on demand.</p></div></div>
+  <div class="panel-heading"><div><h2>Reports</h2><p>Incident summaries on demand, plus a proactive network health review of recent trends (not just open incidents).</p></div></div>
   <div class="test-row">
-    <label>Window<select id="ai_report_window"><option value="24">Last 24 hours</option><option value="168">Last 7 days</option><option value="720">Last 30 days</option></select></label>
-    <button type="button" class="secondary-button" id="ai_report_generate">Generate Report</button>
+    <label>Window<select id="ai_report_window"><option value="24">Last 24 hours</option><option value="168" selected>Last 7 days</option><option value="720">Last 30 days</option></select></label>
+    <button type="button" class="secondary-button" id="ai_report_generate">Generate Incident Report</button>
+    <button type="button" class="secondary-button" id="ai_health_report_generate">Generate Network Health Report</button>
     <span class="test-status" id="ai_report_status"></span>
   </div>
   <div class="ai-report-list" id="ai_report_list"><div class="empty-chart" style="display:flex">No reports generated yet.</div></div>
+</section>
+
+<section class="card dashboard-card">
+  <div class="panel-heading"><div><h2>Server Maintenance</h2><p>Runs your smart_maintenance.sh (OS + Docker updates) on the schedule set in Settings &gt; AI &amp; Automation.</p></div></div>
+  <div class="test-row">
+    <button type="button" class="secondary-button" id="maintenance_run_now">Run Maintenance Now</button>
+    <span class="test-status" id="maintenance_status"></span>
+  </div>
+  <div class="ai-report-list" id="maintenance_run_list"><div class="empty-chart" style="display:flex">No maintenance runs yet.</div></div>
 </section>
 
 <section class="card dashboard-card">
@@ -40,18 +50,31 @@ async function sendChat(){const input=document.getElementById('ai_chat_input'),s
 document.getElementById('ai_chat_send')?.addEventListener('click',sendChat);
 document.getElementById('ai_chat_input')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}});
 
-function reportCard(r){return `<article class="incident-item severity-warning"><div class="incident-main"><strong>Report · last ${ie(r.window_hours)}h</strong></div><div class="incident-meta"><span>${ie(r.ts)}</span></div><div class="incident-details" style="white-space:pre-wrap">${ie(r.report_text)}</div></article>`}
+const REPORT_TYPE_LABELS={incident_summary:'Incident Report',network_health:'Network Health Report'};
+function reportCard(r){return `<article class="incident-item severity-warning"><div class="incident-main"><strong>${ie(REPORT_TYPE_LABELS[r.report_type]||'Report')} · last ${ie(r.window_hours)}h</strong></div><div class="incident-meta"><span>${ie(r.ts)}</span></div><div class="incident-details" style="white-space:pre-wrap">${ie(r.report_text)}</div></article>`}
 async function loadReports(){try{const d=await api('/api/ai/reports');const list=document.getElementById('ai_report_list');list.innerHTML=(d.items||[]).length?d.items.map(reportCard).join(''):'<div class="empty-chart" style="display:flex">No reports generated yet.</div>'}catch(e){}}
 async function generateReport(){const status=document.getElementById('ai_report_status'),hours=document.getElementById('ai_report_window').value;status.textContent='Generating…';status.className='test-status testing';
   try{await api('/api/ai/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hours:Number(hours)})});status.textContent='Done ✓';status.className='test-status good';await loadReports();}
   catch(e){status.textContent=`Failed · ${e.message||e}`;status.className='test-status bad'}}
 document.getElementById('ai_report_generate')?.addEventListener('click',generateReport);
+async function generateHealthReport(){const status=document.getElementById('ai_report_status'),hours=document.getElementById('ai_report_window').value;status.textContent='Analysing trends…';status.className='test-status testing';
+  try{await api('/api/ai/health-report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hours:Number(hours)})});status.textContent='Done ✓';status.className='test-status good';await loadReports();}
+  catch(e){status.textContent=`Failed · ${e.message||e}`;status.className='test-status bad'}}
+document.getElementById('ai_health_report_generate')?.addEventListener('click',generateHealthReport);
+
+const MAINT_STATUS_LABELS={running:'Running…',completed:'Completed',failed:'Failed',timeout:'Timed out'};
+function maintenanceRow(r){const pill=r.status==='completed'?'good':(r.status==='running'?'warn':'bad');return `<article class="incident-item severity-${r.status==='completed'?'warning':'critical'}"><div class="incident-main"><span class="status-pill ${pill}">${ie(MAINT_STATUS_LABELS[r.status]||r.status)}</span><strong>Started ${ie(r.started_at)}</strong></div><div class="incident-meta"><span>${r.finished_at?`Finished ${ie(r.finished_at)}`:'In progress'}</span></div><div class="incident-details" style="white-space:pre-wrap">${ie(r.ai_summary||'(no AI summary — check Settings > AI Assistant is enabled, or view the raw log on the host)')}</div></article>`}
+async function loadMaintenance(){try{const d=await api('/api/maintenance/runs');const list=document.getElementById('maintenance_run_list');list.innerHTML=(d.items||[]).length?d.items.map(maintenanceRow).join(''):'<div class="empty-chart" style="display:flex">No maintenance runs yet.</div>'}catch(e){}}
+async function runMaintenanceNow(){const status=document.getElementById('maintenance_status');status.textContent='Launching…';status.className='test-status testing';
+  try{const d=await api('/api/maintenance/run-now',{method:'POST'});status.textContent=`${d.message} ✓`;status.className='test-status good';await loadMaintenance();}
+  catch(e){status.textContent=`Failed · ${e.message||e}`;status.className='test-status bad'}}
+document.getElementById('maintenance_run_now')?.addEventListener('click',runMaintenanceNow);
 
 const ACTION_LABELS={restart_ap:'Restart Wi-Fi AP',restart_gateway:'Restart Gateway',restart_container:'Restart Container',restart_plexmania_process:'Restart Plexmania Process',run_command:'Ran Shell Command',restart_access_point:'Restart Wi-Fi AP',diagnose_only:'No action needed',ai_diagnose:'Diagnosis failed',recommend_restart_ap:'Recommended: Restart Wi-Fi AP (not executed)',recommend_restart_gateway:'Recommended: Restart Gateway (not executed)',recommend_restart_container:'Recommended: Restart Container (not executed)',recommend_run_command:'Recommended: Run Command (not executed)'};
 function actionLabel(a){return ACTION_LABELS[a]||a}
 function activityRow(a){const isAi=String(a.source||'').startsWith('ai');const isDiagnosisOnly=a.action==='diagnose_only'||a.action==='ai_diagnose'||String(a.action).startsWith('recommend_')||String(a.action).endsWith('_skipped_cooldown');const pill=!a.result_ok?'bad':(isDiagnosisOnly?'warn':'good');const pillText=!a.result_ok?(isAi?'DIAGNOSIS FAILED':'ACTION FAILED'):(isDiagnosisOnly?'AI DIAGNOSIS':'ACTION TAKEN');const sourceBadge=isAi?`<span class="incident-severity">${a.source==='ai-chat'?'AI CHAT':'AI'}</span>`:'';const confidence=(a.confidence!=null)?` · Confidence ${Math.round(a.confidence*100)}%`:'';return `<article class="incident-item severity-${!a.result_ok?'critical':'warning'}"><div class="incident-main"><span class="status-pill ${pill}">${pillText}</span><strong>${ie(actionLabel(a.action))}</strong>${sourceBadge}</div><div class="incident-meta"><span>${ie(a.category||'')} · ${ie(a.device||'—')}${confidence}</span><span>${ie(a.ts)}</span></div><div class="incident-details">${ie(a.explanation||a.message||'')}</div></article>`}
 async function loadActivity(){try{const d=await api('/api/remediation-actions?limit=100');const list=document.getElementById('ai_activity_list');list.innerHTML=(d.items||[]).length?d.items.map(activityRow).join(''):'<div class="empty-chart" style="display:flex">No AI activity yet.</div>';document.getElementById('ai_feed_refresh_state').textContent=`Updated ${new Date().toLocaleTimeString()}`}catch(e){}}
 
-loadStatus();loadChatHistory();loadReports();loadActivity();setInterval(loadActivity,30000);
+loadStatus();loadChatHistory();loadReports();loadMaintenance();loadActivity();setInterval(loadActivity,30000);setInterval(loadMaintenance,30000);
 </script>
 {% endblock %}
