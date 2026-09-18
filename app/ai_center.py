@@ -2,12 +2,23 @@ from __future__ import annotations
 
 from typing import Any
 
+from app import remediation
 from app.database import connect
 from app.docker_routes import _HOSTS as _DOCKER_HOSTS
 from app.docker_routes import _client_from_payload as _docker_client_from_payload
+from app.docker_routes import _plexmania_from_payload
 from app.integrations.gemini import GeminiClient
+from app.integrations.shell_agent import ShellAgentClient
+from app.integrations.unifi import UniFiClient
 from app.monitoring import live_snapshot
 from app.settings_store import all_settings, get_secret
+
+# Actions the chat may execute directly (as opposed to only diagnosing), on
+# top of what the automatic incident pipeline already does. Kept intentionally
+# smaller than remediation.py's allow-list — restart_ap needs a device_id the
+# chat has no reliable way to name from a Wi-Fi AP's display name alone, so
+# it's left to the automatic pipeline for now.
+_CHAT_ACTIONS = {"restart_container", "restart_plexmania_process", "restart_gateway", "run_command", "none"}
 
 
 def _bool(value: Any, default: bool = False) -> bool:
@@ -26,7 +37,7 @@ def _gemini_client() -> tuple[GeminiClient | None, dict[str, Any] | None]:
     return GeminiClient(key, str(cfg.get("ai_model") or "gemini-3.6-flash")), None
 
 
-def _current_state_summary() -> str:
+def _gather_state() -> dict[str, Any]:
     con = connect()
     try:
         incidents = con.execute(
@@ -38,7 +49,7 @@ def _current_state_summary() -> str:
     finally:
         con.close()
 
-    containers_summary: list[str] = []
+    all_containers: list[tuple[str, str, str]] = []  # (host, name, status)
     for host in _DOCKER_HOSTS:
         client, error = _docker_client_from_payload(host, {})
         if error:
@@ -46,10 +57,17 @@ def _current_state_summary() -> str:
         try:
             data = client.containers()
             for c in data.get("containers", []):
-                if c.get("status") != "running":
-                    containers_summary.append(f"{host}/{c.get('name')}: {c.get('status')}")
+                all_containers.append((host, str(c.get("name")), str(c.get("status"))))
         except Exception:
             continue
+
+    plexmania_processes: list[dict[str, Any]] = []
+    plex_client, plex_error = _plexmania_from_payload({})
+    if not plex_error:
+        try:
+            plexmania_processes = plex_client.processes().get("processes", [])
+        except Exception:
+            plexmania_processes = []
 
     snapshot = live_snapshot()
     gateway = snapshot.get("gateway") or {}
@@ -68,13 +86,132 @@ def _current_state_summary() -> str:
     if not recent:
         lines.append("(none)")
 
-    lines.append("\n=== Non-running Docker containers ===")
-    lines.extend(containers_summary or ["(none known, or Docker agents not configured)"])
+    lines.append("\n=== Docker containers (host/name: status) ===")
+    lines.extend([f"{h}/{n}: {s}" for h, n, s in all_containers] or ["(none known, or Docker agents not configured)"])
+
+    lines.append("\n=== plexmania (10.0.0.6) processes ===")
+    lines.extend([f"{p.get('name')}: running={p.get('running')} port_open={p.get('port_open')}" for p in plexmania_processes] or ["(not configured or unreachable)"])
 
     lines.append("\n=== Live snapshot ===")
     lines.append(f"Gateway: wan_up={gateway.get('wan_up')} cpu={gateway.get('cpu')} memory={gateway.get('memory')} uptime_s={gateway.get('uptime')}")
     lines.append(f"UPS: status={ups.get('status')} load_pct={ups.get('load_pct')} connected={ups.get('connected')}")
-    return "\n".join(lines)
+
+    return {
+        "text": "\n".join(lines),
+        "containers": all_containers,
+        "plexmania_processes": [str(p.get("name")) for p in plexmania_processes],
+    }
+
+
+def _current_state_summary() -> str:
+    return _gather_state()["text"]
+
+
+def _decide_prompt(message: str, state: dict[str, Any]) -> str:
+    by_host: dict[str, list[str]] = {}
+    for host, name, _status in state["containers"]:
+        by_host.setdefault(host, []).append(name)
+    containers_block = "\n".join(f'  host "{h}": ' + ", ".join(names) for h, names in by_host.items()) or "  (none)"
+    plexmania = ", ".join(state["plexmania_processes"]) or "(none)"
+    return (
+        "You are the autonomous administrator for a home network/server monitoring dashboard, chatting directly "
+        "with the owner (this is chat, not an automatic incident). Decide whether their message is asking you to "
+        "take an action right now, or is just a question / wants information.\n\n"
+        f"Current state:\n{state['text']}\n\n"
+        f"Known Docker containers, grouped by host:\n{containers_block}\n"
+        f"Known plexmania (10.0.0.6) processes (pick target from exactly these): {plexmania}\n\n"
+        f"User message: {message}\n\n"
+        "Respond with strict JSON only:\n"
+        '{"intent": "<action or question>", '
+        '"action": "<one of: restart_container, restart_plexmania_process, restart_gateway, run_command, none>", '
+        '"host": "<the host name (e.g. newtiny) - ONLY for restart_container, else empty>", '
+        '"target": "<for restart_container: ONLY the container name, e.g. \\"uptime-kuma\\", never host/name combined. '
+        'for restart_plexmania_process: the exact process name. Empty for other actions>", '
+        '"command": "<exact shell command - only for run_command, else empty>", '
+        '"reasoning": "<one sentence>"}\n\n'
+        "Rules: only set intent to \"action\" if the user is clearly asking you to fix/restart/run something now, not "
+        "just describing a problem. target and host must be copied exactly from the lists above (as separate fields, "
+        "never combined) — never invent a name. If nothing matches or you're unsure, use action \"none\" and intent "
+        "\"question\"."
+    )
+
+
+def _normalize_host_target(host: str, target: str) -> tuple[str, str]:
+    """The model is instructed to keep host/target separate, but if it still
+    combines them as "host/name" or "host:name" (in either field), recover
+    the two parts rather than sending a bogus combined string downstream."""
+    for value in (target, host):
+        for sep in ("/", ":"):
+            if sep in value:
+                maybe_host, _, maybe_name = value.partition(sep)
+                if maybe_host in _DOCKER_HOSTS and maybe_name:
+                    return maybe_host, maybe_name
+    return host, target
+
+
+def _execute_chat_action(action: str, host: str, target: str, command: str, cfg: dict[str, Any]) -> dict[str, Any]:
+    if action == "restart_container":
+        host, target = _normalize_host_target(host, target)
+        if host not in _DOCKER_HOSTS or not target:
+            return {"ok": False, "message": "Could not identify which container/host to restart"}
+        client, error = _docker_client_from_payload(host, {})
+        if error:
+            return {"ok": False, "message": error.get("message", "Docker agent not configured")}
+        try:
+            return client.restart(target)
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
+    if action == "restart_plexmania_process":
+        if not target:
+            return {"ok": False, "message": "Could not identify which process to restart"}
+        client, error = _plexmania_from_payload({})
+        if error:
+            return {"ok": False, "message": error.get("message", "plexmania agent not configured")}
+        try:
+            return client.restart(target)
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
+    if action == "restart_gateway":
+        api_key = get_secret("unifi_api_key") or ""
+        url = str(cfg.get("unifi_url", "")).strip()
+        if not remediation._bool(cfg.get("unifi_enabled")) or not api_key or not url:
+            return {"ok": False, "message": "UniFi integration is not configured"}
+        client = UniFiClient(url, api_key, remediation._bool(cfg.get("unifi_verify_ssl")))
+        try:
+            snapshot = client.snapshot()
+            mac = str((snapshot.get("gateway") or {}).get("mac") or "")
+        except Exception as exc:
+            return {"ok": False, "message": f"Could not look up gateway MAC: {exc}"}
+        if not mac:
+            return {"ok": False, "message": "Gateway MAC not available from UniFi snapshot"}
+        return client.restart_gateway(mac)
+
+    if action == "run_command":
+        if not command:
+            return {"ok": False, "message": "No command was supplied"}
+        if remediation._shell_rate_limited(cfg):
+            return {"ok": False, "message": "Global shell-action rate limit reached for this hour — try again later"}
+        if not remediation._bool(cfg.get("shell_agent_enabled")):
+            return {"ok": False, "message": "Shell agent is not enabled"}
+        agent_url = str(cfg.get("shell_agent_url") or "").strip()
+        agent_token = get_secret("shell_agent_token") or ""
+        if not agent_url or not agent_token:
+            return {"ok": False, "message": "Shell agent is not configured"}
+        result = ShellAgentClient(agent_url, agent_token).exec(command, timeout=45)
+        if result.get("blocked"):
+            return {"ok": False, "message": result.get("message") or "Command blocked by safety denylist"}
+        stdout = str(result.get("stdout") or "").strip()
+        stderr = str(result.get("stderr") or "").strip()
+        pieces = [f"$ {command}", f"exit={result.get('exit_code', '?')}"]
+        if stdout:
+            pieces.append(stdout[:1500])
+        if stderr:
+            pieces.append(f"stderr: {stderr[:800]}")
+        return {"ok": bool(result.get("ok")), "message": " | ".join(pieces)}
+
+    return {"ok": False, "message": f"Unknown action '{action}'"}
 
 
 def chat(message: str) -> dict[str, Any]:
@@ -84,27 +221,72 @@ def chat(message: str) -> dict[str, Any]:
     message = (message or "").strip()
     if not message:
         return {"ok": False, "message": "Enter a question"}
-    context = _current_state_summary()
-    prompt = (
-        "You are the AI administrator embedded in a home network/server monitoring dashboard called AT Network "
-        "Dashboard. Answer the user's question using the current state below plus general troubleshooting knowledge. "
-        "Be concise and specific. This chat cannot directly execute commands itself — autonomous fixes happen "
-        "automatically through the incident pipeline when enabled in Settings, so if asked to 'do' something, explain "
-        "what will happen automatically (if anything) and point to the Incidents or Settings page rather than "
-        "pretending to have taken an action.\n\n"
-        f"Current system state:\n{context}\n\nQuestion: {message}\n"
-    )
-    result = client.chat(prompt)
-    if not result.get("ok"):
-        return result
+
+    cfg = all_settings()
+    state = _gather_state()
+    can_act = remediation._bool(cfg.get("auto_remediation_enabled")) and remediation._bool(cfg.get("ai_autonomous_enabled")) and not remediation._bool(cfg.get("maintenance_mode"))
+
+    reply_text: str
+    if can_act:
+        decision = client.diagnose_incident(_decide_prompt(message, state))
+        data = decision.get("data") if decision.get("ok") else {}
+        action = str((data or {}).get("action") or "none").strip()
+        if action not in _CHAT_ACTIONS:
+            action = "none"
+        intent = str((data or {}).get("intent") or "question").strip()
+        if intent == "action" and action != "none":
+            host = str((data or {}).get("host") or "").strip()
+            target = str((data or {}).get("target") or "").strip()
+            command = str((data or {}).get("command") or "").strip()
+            reasoning = str((data or {}).get("reasoning") or "").strip()
+            if action == "restart_container":
+                host, target = _normalize_host_target(host, target)
+            exec_result = _execute_chat_action(action, host, target, command, cfg)
+            outcome = "succeeded" if exec_result.get("ok") else "failed"
+            device = target or host or "-"
+            remediation._log(
+                f"chat:{action}:{device}", "Chat", device, action, bool(exec_result.get("ok")),
+                str(exec_result.get("message") or ""), source="ai-chat", explanation=reasoning,
+            )
+            reply_text = f"{'Done' if exec_result.get('ok') else 'Tried, but it failed'} — {action.replace('_', ' ')} on {device} {outcome}.\n\n{exec_result.get('message') or ''}".strip()
+        else:
+            no_action_reason = str((data or {}).get("reasoning") or "").strip() or "no matching action/target was found for this message"
+            answer = client.chat(_qa_prompt(message, state["text"], no_action_reason))
+            if not answer.get("ok"):
+                return answer
+            reply_text = answer["text"]
+    else:
+        answer = client.chat(_qa_prompt(message, state["text"], "autonomous actions are currently switched off in Settings"))
+        if not answer.get("ok"):
+            return answer
+        reply_text = answer["text"]
+        if any(word in message.lower() for word in ("fix", "restart", "run ", "reboot")):
+            reply_text += "\n\n(Autonomous actions are currently off in Settings > AI & Automation — I can only diagnose, not act, until that's turned on.)"
+
     con = connect()
     try:
         con.execute("INSERT INTO ai_chat_log(role,message) VALUES ('user',?)", (message,))
-        con.execute("INSERT INTO ai_chat_log(role,message) VALUES ('assistant',?)", (result["text"],))
+        con.execute("INSERT INTO ai_chat_log(role,message) VALUES ('assistant',?)", (reply_text,))
         con.commit()
     finally:
         con.close()
-    return {"ok": True, "reply": result["text"]}
+    return {"ok": True, "reply": reply_text}
+
+
+def _qa_prompt(message: str, state_text: str, no_action_taken_reason: str) -> str:
+    return (
+        "You are the AI administrator embedded in a home network/server monitoring dashboard called AT Network "
+        "Dashboard. Answer the user's message using the current state below plus general troubleshooting knowledge. "
+        "Be concise and specific.\n\n"
+        "IMPORTANT: no action is being executed as part of this reply "
+        f"({no_action_taken_reason}). Never write as if you are currently performing, initiating, or have just "
+        "completed an action (e.g. never say \"restarting now\" or \"I've restarted it\") — if the user asked for "
+        "something to be done, explain plainly that it wasn't done and why (e.g. the target couldn't be identified, "
+        "the host is unreachable, or autonomous actions are off), and what they can do instead. Only ever describe "
+        "actions the automatic incident pipeline actually already logged (visible in the state below) as having "
+        "happened.\n\n"
+        f"Current system state:\n{state_text}\n\nUser message: {message}\n"
+    )
 
 
 def chat_history(limit: int = 50) -> list[dict[str, Any]]:

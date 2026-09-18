@@ -7,12 +7,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.database import connect
 from app.isp_report import build_evidence_zip, build_pdf
-from app.monitoring import live_snapshot
+from app.monitoring import live_snapshot, utc_now
 from app.version import APP_VERSION
 
 router = APIRouter(tags=["monitoring"])
@@ -101,6 +101,37 @@ def ups(hours: int = Query(24, ge=1, le=8760)):
 @router.get("/api/monitoring/wifi")
 def wifi(hours: int = Query(24, ge=1, le=8760), limit: int = Query(0, ge=0, le=10000)):
     return _wifi_rows(hours, limit)
+
+@router.post("/api/monitoring/wifi/remove")
+async def remove_wifi_ap(request: Request) -> dict:
+    """Stop tracking one AP: deletes its history and traffic samples and closes
+    any active incident for it. If the AP is still live in UniFi, the next
+    30s collection cycle will simply re-add it — this is meant for
+    decommissioned/renamed APs that would otherwise clutter the AP list and
+    history filters forever."""
+    payload = await request.json()
+    device_id = str(payload.get("device_id") or "").strip()
+    ap_name = str(payload.get("ap_name") or "").strip()
+    if not device_id and not ap_name:
+        return JSONResponse({"ok": False, "message": "No AP specified"}, status_code=400)
+    con = connect()
+    try:
+        if device_id:
+            wifi_deleted = con.execute("DELETE FROM wifi_history WHERE device_id=?", (device_id,)).rowcount
+            traffic_deleted = con.execute("DELETE FROM unifi_ap_traffic_history WHERE device_id=?", (device_id,)).rowcount
+            con.execute(
+                "UPDATE incidents SET active=0, ended_at=?, last_seen_at=? WHERE active=1 AND incident_key LIKE ?",
+                (utc_now(), utc_now(), f"wifi-retries:{device_id}:%"),
+            )
+        else:
+            wifi_deleted = con.execute("DELETE FROM wifi_history WHERE (device_id IS NULL OR device_id='') AND ap_name=?", (ap_name,)).rowcount
+            traffic_deleted = 0
+        con.commit()
+        if wifi_deleted == 0 and traffic_deleted == 0:
+            return {"ok": True, "message": "No stored history matched that AP (already removed?)"}
+        return {"ok": True, "message": f"Removed {wifi_deleted} Wi-Fi samples and {traffic_deleted} traffic samples"}
+    finally:
+        con.close()
 
 @router.get("/api/monitoring/unifi-wan")
 def unifi_wan(hours: int = Query(24, ge=1, le=17520)):

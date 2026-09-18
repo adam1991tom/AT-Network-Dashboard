@@ -301,8 +301,11 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent);
 .wifi-radio-card.good { border-color: rgba(74,222,128,.3); }
 .wifi-radio-card.warn { border-color: rgba(245,158,11,.42); }
 .wifi-radio-card.bad { border-color: rgba(239,68,68,.48); }
-.wifi-card-title { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 12px; }
+.wifi-card-title { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .wifi-card-title span { color: var(--muted); font-size: .8rem; }
+.wifi-card-title strong { flex: 1; overflow-wrap: anywhere; }
+.wifi-remove-ap { border: 1px solid var(--border); background: transparent; color: var(--muted); border-radius: 999px; width: 22px; height: 22px; line-height: 1; cursor: pointer; font-size: .72rem; flex: none; }
+.wifi-remove-ap:hover { color: var(--status-bad); border-color: var(--status-bad); }
 .wifi-card-metrics { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 8px; }
 .wifi-card-metrics div { display: grid; gap: 3px; }
 .wifi-card-metrics span { color: var(--muted); font-size: .68rem; text-transform: uppercase; }
