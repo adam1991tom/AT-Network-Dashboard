@@ -6,6 +6,7 @@ from typing import Any
 from app.database import connect
 from app.docker_routes import _HOSTS as _DOCKER_HOSTS
 from app.docker_routes import _client_from_payload as _docker_client_from_payload
+from app.docker_routes import _plexmania_from_payload
 from app.integrations.gemini import GeminiClient
 from app.integrations.shell_agent import ShellAgentClient
 from app.integrations.unifi import UniFiClient
@@ -17,8 +18,12 @@ _shell_action_times: list[float] = []
 
 # Per-category allow-list of actions the AI assistant may recommend/execute.
 # UPS and ISP have no safe automatic action (see _execute_action) so they are
-# diagnosis-only. Categories not listed here (e.g. Media) are outside this
-# feature's scope and are skipped entirely.
+# diagnosis-only. Categories not listed here are outside this feature's scope
+# and are skipped entirely. "Media" only grants restart_plexmania_process/
+# run_windows_command for plexmania-* incidents specifically (checked in
+# _execute_action) - other Media incidents (Sonarr/Radarr/etc., which live on
+# newtiny as Docker containers, not on the plexmania Windows host) stay
+# diagnosis-only here since they're already covered by the System category.
 _AI_ACTION_ALLOWLIST: dict[str, set[str]] = {
     "Wi-Fi": {"restart_ap", "none"},
     "Gateway": {"restart_gateway", "none"},
@@ -26,6 +31,7 @@ _AI_ACTION_ALLOWLIST: dict[str, set[str]] = {
     "UPS": {"none"},
     "ISP": {"none"},
     "System": {"restart_container", "run_command", "none"},
+    "Media": {"restart_plexmania_process", "run_windows_command", "none"},
 }
 
 
@@ -110,9 +116,9 @@ def maybe_fix(incident_key: str, category: str, device: str) -> None:
 
 def _build_prompt(category: str, device: str, severity: str, summary: str, details: str, allowed: set[str]) -> str:
     options = ", ".join(sorted(allowed))
-    needs_command = "run_command" in allowed
+    needs_command = "run_command" in allowed or "run_windows_command" in allowed
     command_field = (
-        ', "command": "<exact shell command to run on the host, ONLY when recommended_action is run_command, else empty string>"'
+        ', "command": "<exact command to run, ONLY when recommended_action is run_command or run_windows_command, else empty string>"'
         if needs_command else ""
     )
     return (
@@ -135,6 +141,10 @@ def _build_prompt(category: str, device: str, severity: str, summary: str, detai
         "Put the exact command in the \"command\" field. Prefer the least invasive command that could plausibly fix "
         "the described symptom, never combine unrelated operations with ; or &&, and never guess at a fix for a "
         "symptom the details don't actually support.\n"
+        '- "restart_plexmania_process" restarts one named app (plex, ersatztv, or nexroll) on the separate plexmania '
+        "Windows host (safe, brief restart of just that one app).\n"
+        '- "run_windows_command" runs a single PowerShell command directly on the plexmania Windows host, with the '
+        "same caveats as run_command above (least invasive command, exact text in the \"command\" field, never guess).\n"
         '- "none" means diagnose only, do not act.\n'
         f"- Only ever choose from: {options}. Never invent another action.\n"
     )
@@ -182,6 +192,41 @@ def _execute_action(action: str, incident_key: str, cfg: dict[str, Any], command
         if not agent_url or not agent_token:
             return {"ok": False, "message": "Shell agent is not configured"}
         result = ShellAgentClient(agent_url, agent_token).exec(command, timeout=45)
+        if result.get("blocked"):
+            return {"ok": False, "message": result.get("message") or "Command blocked by safety denylist"}
+        stdout = str(result.get("stdout") or "").strip()
+        stderr = str(result.get("stderr") or "").strip()
+        pieces = [f"$ {command}", f"exit={result.get('exit_code', '?')}"]
+        if stdout:
+            pieces.append(stdout[:1500])
+        if stderr:
+            pieces.append(f"stderr: {stderr[:800]}")
+        return {"ok": bool(result.get("ok")), "message": " | ".join(pieces) if result.get("exit_code") is not None else str(result.get("message") or "")}
+
+    if action == "restart_plexmania_process":
+        prefix, suffix = "plexmania-", "-down"
+        if not (incident_key.startswith(prefix) and incident_key.endswith(suffix)):
+            return {"ok": False, "message": "restart_plexmania_process is only valid for plexmania-* incidents"}
+        app_name = incident_key[len(prefix):-len(suffix)]
+        if app_name == "agent":
+            return {"ok": False, "message": "The plexmania agent itself is unreachable — no in-app action can restart a specific process on a host it can't already talk to"}
+        client, error = _plexmania_from_payload({})
+        if error:
+            return {"ok": False, "message": error.get("message", "plexmania agent not configured")}
+        try:
+            return client.restart(app_name)
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)}
+
+    if action == "run_windows_command":
+        if not command:
+            return {"ok": False, "message": "No command was supplied"}
+        if _shell_rate_limited(cfg):
+            return {"ok": False, "message": "Global shell-action rate limit reached for this hour — skipped"}
+        client, error = _plexmania_from_payload({})
+        if error:
+            return {"ok": False, "message": error.get("message", "plexmania agent not configured")}
+        result = client.exec(command, timeout=45)
         if result.get("blocked"):
             return {"ok": False, "message": result.get("message") or "Command blocked by safety denylist"}
         stdout = str(result.get("stdout") or "").strip()
@@ -246,6 +291,8 @@ def handle_incident_opened(incident_key: str, category: str, device: str, severi
     allowed = _AI_ACTION_ALLOWLIST.get(category)
     if allowed is None:
         return  # category outside the scope of AI diagnosis
+    if category == "Media" and not incident_key.startswith("plexmania-"):
+        allowed = {"none"}  # e.g. Sonarr/Radarr Docker containers - System category already covers these
 
     client = GeminiClient(api_key, str(cfg.get("ai_model") or "gemini-3.6-flash"))
     prompt = _build_prompt(category, device, severity, summary, details, allowed)

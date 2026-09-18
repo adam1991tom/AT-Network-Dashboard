@@ -21,7 +21,7 @@ from app.settings_store import all_settings, get_secret
 # smaller than remediation.py's allow-list — restart_ap needs a device_id the
 # chat has no reliable way to name from a Wi-Fi AP's display name alone, so
 # it's left to the automatic pipeline for now.
-_CHAT_ACTIONS = {"restart_container", "restart_plexmania_process", "restart_gateway", "run_command", "none"}
+_CHAT_ACTIONS = {"restart_container", "restart_plexmania_process", "restart_gateway", "run_command", "run_windows_command", "none"}
 
 
 def _bool(value: Any, default: bool = False) -> bool:
@@ -126,11 +126,12 @@ def _decide_prompt(message: str, state: dict[str, Any]) -> str:
         f"User message: {message}\n\n"
         "Respond with strict JSON only:\n"
         '{"intent": "<action or question>", '
-        '"action": "<one of: restart_container, restart_plexmania_process, restart_gateway, run_command, none>", '
+        '"action": "<one of: restart_container, restart_plexmania_process, restart_gateway, run_command, run_windows_command, none>", '
         '"host": "<the host name (e.g. newtiny) - ONLY for restart_container, else empty>", '
         '"target": "<for restart_container: ONLY the container name, e.g. \\"uptime-kuma\\", never host/name combined. '
         'for restart_plexmania_process: the exact process name. Empty for other actions>", '
-        '"command": "<exact shell command - only for run_command, else empty>", '
+        '"command": "<exact command - shell command for run_command (runs on newtiny), PowerShell command for '
+        'run_windows_command (runs on the plexmania Windows host), else empty>", '
         '"reasoning": "<one sentence>"}\n\n'
         "Rules: only set intent to \"action\" if the user is clearly asking you to fix/restart/run something now, not "
         "just describing a problem. target and host must be copied exactly from the lists above (as separate fields, "
@@ -203,6 +204,26 @@ def _execute_chat_action(action: str, host: str, target: str, command: str, cfg:
         if not agent_url or not agent_token:
             return {"ok": False, "message": "Shell agent is not configured"}
         result = ShellAgentClient(agent_url, agent_token).exec(command, timeout=45)
+        if result.get("blocked"):
+            return {"ok": False, "message": result.get("message") or "Command blocked by safety denylist"}
+        stdout = str(result.get("stdout") or "").strip()
+        stderr = str(result.get("stderr") or "").strip()
+        pieces = [f"$ {command}", f"exit={result.get('exit_code', '?')}"]
+        if stdout:
+            pieces.append(stdout[:1500])
+        if stderr:
+            pieces.append(f"stderr: {stderr[:800]}")
+        return {"ok": bool(result.get("ok")), "message": " | ".join(pieces)}
+
+    if action == "run_windows_command":
+        if not command:
+            return {"ok": False, "message": "No command was supplied"}
+        if remediation._shell_rate_limited(cfg):
+            return {"ok": False, "message": "Global shell-action rate limit reached for this hour — try again later"}
+        client, error = _plexmania_from_payload({})
+        if error:
+            return {"ok": False, "message": error.get("message", "plexmania agent not configured")}
+        result = client.exec(command, timeout=45)
         if result.get("blocked"):
             return {"ok": False, "message": result.get("message") or "Command blocked by safety denylist"}
         stdout = str(result.get("stdout") or "").strip()

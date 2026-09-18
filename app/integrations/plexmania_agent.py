@@ -1,5 +1,41 @@
 from __future__ import annotations
+
+import re
+
 import requests
+
+# Kept in sync by hand with plexmania-agent/agent.ps1's $DenylistPatterns -
+# that script is a separate deployable unit (runs on the Windows host, not in
+# this codebase's Python process) so this can't just be imported from it.
+# This copy is defense in depth (reject obviously catastrophic commands
+# before even making the network call); the agent's own copy on the Windows
+# host is the real enforcement boundary.
+DENYLIST_PATTERNS = [
+    r"Remove-Item\s+.*-Recurse.*(\s|^)[A-Za-z]:\\?\s*(-|$)",
+    r"Format-Volume",
+    r"Clear-Disk",
+    r"\bdiskpart\b",
+    r"\bsdelete\b",
+    r"cipher\s+/w",
+    r"Stop-Computer",
+    r"Restart-Computer",
+    r"shutdown(\.exe)?\s+/[rs]\b",
+    r"Set-MpPreference\s+.*-DisableRealtimeMonitoring",
+    r"netsh\s+advfirewall\s+set\s+allprofiles\s+state\s+off",
+    r"reg(\.exe)?\s+delete\s+HKLM\\SAM",
+    r"net(\.exe)?\s+user\s+administrator",
+    r"(iwr|Invoke-WebRequest)\b.*\|\s*(iex|Invoke-Expression)\b",
+    r"wevtutil\s+cl\b",
+    r"vssadmin\s+delete\s+shadows",
+]
+_DENYLIST = [re.compile(p, re.IGNORECASE) for p in DENYLIST_PATTERNS]
+
+
+def blocked_reason(command: str) -> str | None:
+    for pattern in _DENYLIST:
+        if pattern.search(command):
+            return f"Command blocked by safety denylist (matched pattern: {pattern.pattern})"
+    return None
 
 
 class PlexmaniaAgentClient:
@@ -32,6 +68,32 @@ class PlexmaniaAgentClient:
             raise ValueError("Enter the agent token")
         response = requests.post(f"{self.base_url}/processes/{name}/restart", headers=self._headers(), timeout=timeout)
         response.raise_for_status()
+        return response.json()
+
+    def exec(self, command: str, timeout: int = 30) -> dict:
+        """Runs a PowerShell command on the plexmania host via agent.ps1's
+        /exec endpoint (same denylist-protected contract as the Linux
+        shell-agent: ok/blocked/command/exit_code/stdout/stderr)."""
+        if not self.base_url:
+            return {"ok": False, "message": "Enter the agent URL"}
+        if not self.token:
+            return {"ok": False, "message": "Enter the agent token"}
+        reason = blocked_reason(command)
+        if reason:
+            return {"ok": False, "blocked": True, "message": reason, "command": command}
+        try:
+            response = requests.post(
+                f"{self.base_url}/exec", headers=self._headers(),
+                json={"command": command, "timeout": timeout}, timeout=timeout + 10,
+            )
+        except requests.RequestException as exc:
+            return {"ok": False, "message": str(exc)}
+        if not response.ok:
+            try:
+                detail = response.json().get("detail")
+            except Exception:
+                detail = None
+            return {"ok": False, "message": detail or f"HTTP {response.status_code}"}
         return response.json()
 
     def test_connection(self) -> dict:

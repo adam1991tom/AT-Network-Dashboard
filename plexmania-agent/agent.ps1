@@ -6,9 +6,13 @@
 # docker-agent's shape (status + restart, shared-token auth) using plain
 # process kill+relaunch instead of container start/stop/restart.
 #
-# Run elevated (Task Scheduler, "Run with highest privileges", trigger "At
-# log on" for adamt) - HttpListener needs elevation or a URL ACL reservation
-# to bind 0.0.0.0, since the main dashboard reaches this over the LAN.
+# Run elevated (Task Scheduler, "Run with highest privileges") - HttpListener
+# needs elevation or a URL ACL reservation to bind 0.0.0.0, since the main
+# dashboard reaches this over the LAN. Use trigger "At startup" with "Run
+# whether user is logged on or not", not "At log on" - the latter means this
+# never comes back after a reboot with no interactive session, which is what
+# caused the outage this agent.ps1 revision exists to make less likely to
+# recur (also add a "restart on failure" action so a crash self-heals).
 
 $ErrorActionPreference = 'Stop'
 $Port = 8299
@@ -73,6 +77,71 @@ function Restart-App {
     [ordered]@{ ok = $true; port_responding_after_restart = $upBy }
 }
 
+# Commands matching any of these are refused outright, regardless of who or
+# what asked for them - same philosophy as the Linux shell-agent's denylist
+# (app/shell_agent/app.py): things with no legitimate "fix an incident" use
+# case and a catastrophic, usually irreversible blast radius. Everything else
+# is allowed to run - the caller logs every command/output as the safety net.
+$DenylistPatterns = @(
+    'Remove-Item\s+.*-Recurse.*(\s|^)[A-Za-z]:\\?\s*(-|$)',
+    'Format-Volume',
+    'Clear-Disk',
+    '\bdiskpart\b',
+    '\bsdelete\b',
+    'cipher\s+/w',
+    'Stop-Computer',
+    'Restart-Computer',
+    'shutdown(\.exe)?\s+/[rs]\b',
+    'Set-MpPreference\s+.*-DisableRealtimeMonitoring',
+    'netsh\s+advfirewall\s+set\s+allprofiles\s+state\s+off',
+    'reg(\.exe)?\s+delete\s+HKLM\\SAM',
+    'net(\.exe)?\s+user\s+administrator',
+    '(iwr|Invoke-WebRequest)\b.*\|\s*(iex|Invoke-Expression)\b',
+    'wevtutil\s+cl\b',
+    'vssadmin\s+delete\s+shadows'
+)
+
+function Test-CommandBlocked {
+    param([string]$Command)
+    foreach ($pattern in $DenylistPatterns) {
+        if ($Command -imatch $pattern) {
+            return "Command blocked by safety denylist (matched pattern: $pattern)"
+        }
+    }
+    return $null
+}
+
+function Invoke-AgentCommand {
+    param([string]$Command, [int]$TimeoutSeconds = 30)
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = 'powershell.exe'
+    $psi.Arguments = '-NoProfile -NonInteractive -Command -'
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.UseShellExecute = $false
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $proc.StandardInput.Write($Command)
+    $proc.StandardInput.Close()
+    $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+    $stderrTask = $proc.StandardError.ReadToEndAsync()
+    $completed = $proc.WaitForExit($TimeoutSeconds * 1000)
+    if (-not $completed) {
+        try { $proc.Kill() } catch {}
+        return [ordered]@{ ok = $false; blocked = $false; command = $Command; message = "Command timed out after $TimeoutSeconds s" }
+    }
+    $stdout = $stdoutTask.Result
+    $stderr = $stderrTask.Result
+    [ordered]@{
+        ok        = ($proc.ExitCode -eq 0)
+        blocked   = $false
+        command   = $Command
+        exit_code = $proc.ExitCode
+        stdout    = $stdout.Substring(0, [Math]::Min(8000, $stdout.Length))
+        stderr    = $stderr.Substring(0, [Math]::Min(4000, $stderr.Length))
+    }
+}
+
 function Write-JsonResponse {
     param($Context, $StatusCode, $Body)
     $Context.Response.StatusCode = $StatusCode
@@ -116,6 +185,29 @@ while ($listener.IsListening) {
         }
         elseif ($method -eq 'GET' -and $path -eq '/health') {
             Write-JsonResponse $context 200 @{ status = 'ok'; host = 'plexmania' }
+        }
+        elseif ($method -eq 'POST' -and $path -eq '/exec') {
+            $reader = New-Object System.IO.StreamReader($context.Request.InputStream)
+            $bodyText = $reader.ReadToEnd()
+            $reader.Close()
+            $bodyObj = $null
+            try { $bodyObj = $bodyText | ConvertFrom-Json } catch {}
+            $command = if ($bodyObj) { [string]$bodyObj.command } else { '' }
+            $timeoutSec = if ($bodyObj -and $bodyObj.timeout) { [int]$bodyObj.timeout } else { 30 }
+            if ($timeoutSec -lt 1) { $timeoutSec = 1 }
+            if ($timeoutSec -gt 120) { $timeoutSec = 120 }
+
+            if ([string]::IsNullOrWhiteSpace($command)) {
+                Write-JsonResponse $context 400 @{ detail = 'Empty command' }
+            } else {
+                $blockedReason = Test-CommandBlocked -Command $command
+                if ($blockedReason) {
+                    Write-JsonResponse $context 200 @{ ok = $false; blocked = $true; message = $blockedReason; command = $command }
+                } else {
+                    $result = Invoke-AgentCommand -Command $command -TimeoutSeconds $timeoutSec
+                    Write-JsonResponse $context 200 $result
+                }
+            }
         }
         else {
             Write-JsonResponse $context 404 @{ detail = 'Not found' }

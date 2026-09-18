@@ -68,7 +68,7 @@
         <p class="muted">Requires UniFi to be enabled and connected (Integrations tab). Every action taken is logged on the Incidents and AI Center pages.</p>
       </div>
       <div class="integration-block">
-        <div class="integration-title"><div><strong>AI Autonomous Actions</strong><span class="muted">With the AI Assistant enabled above, let its diagnosis actually execute a fix instead of only explaining it: restart an AP, restart the gateway (drops the whole network ~60-90s), restart a Docker container, or — if the Shell Agent is also configured — run a command directly on the host.</span></div><input id="ai_autonomous_enabled" type="checkbox"></div>
+        <div class="integration-title"><div><strong>AI Autonomous Actions</strong><span class="muted">With the AI Assistant enabled above, let its diagnosis actually execute a fix instead of only explaining it: restart an AP, restart the gateway (drops the whole network ~60-90s), restart a Docker container, restart a plexmania app (Plex/ErsatzTV/NeXroll), or — if the Shell Agent / plexmania agent is configured — run a command directly on newtiny or the plexmania Windows host.</span></div><input id="ai_autonomous_enabled" type="checkbox"></div>
         <div class="field-grid">
           <label>Cooldown minutes per incident+action<input id="ai_autonomous_cooldown_minutes" type="number" min="5"></label>
           <label>Max shell commands per hour (global)<input id="ai_shell_max_actions_per_hour" type="number" min="1"></label>
