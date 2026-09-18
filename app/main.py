@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from app import ai_center
 from app.auth import COOKIE_NAME, change_password, create_admin, has_admin, login, logout, session_user
 from app.config import CONFIG
 from app.database import DB_PATH, initialise
@@ -18,6 +19,7 @@ from app.dev14_routes import router as dev14_router
 from app.integrations.discord import DiscordNotifier
 from app.integrations.gemini import GeminiClient
 from app.integrations.nut import NutPiHttpClient
+from app.integrations.shell_agent import ShellAgentClient
 from app.integrations.unifi import UniFiClient
 from app.integrations.uptime_kuma import UptimeKumaClient
 from app.integrations.whatsapp import WhatsAppNotifier
@@ -201,9 +203,17 @@ async def api_test_discord(request:Request)->dict:
 async def api_test_gemini(request:Request)->dict:
     payload=await request.json();cfg=all_settings()
     api_key=str(payload.get("gemini_api_key") or "").strip() or (get_secret("gemini_api_key") or "")
-    model=str(payload.get("ai_model") or cfg.get("ai_model") or "gemini-2.0-flash").strip()
+    model=str(payload.get("ai_model") or cfg.get("ai_model") or "gemini-3.6-flash").strip()
     if not api_key:return {"ok":False,"message":"Enter or save a Gemini API key"}
     return GeminiClient(api_key,model).test_connection()
+@app.post("/api/settings/test/shell-agent")
+async def api_test_shell_agent(request:Request)->dict:
+    payload=await request.json();cfg=all_settings()
+    url=str(payload.get("shell_agent_url") or cfg.get("shell_agent_url") or "").strip()
+    token=str(payload.get("shell_agent_token") or "").strip() or (get_secret("shell_agent_token") or "")
+    if not url:return {"ok":False,"message":"Enter the shell agent URL"}
+    if not token:return {"ok":False,"message":"Enter or save the shell agent token"}
+    return ShellAgentClient(url,token).test_connection()
 @app.post("/api/settings/test/whatsapp")
 async def api_test_whatsapp(request:Request)->dict:
     payload=await request.json();cfg=all_settings()
@@ -217,6 +227,25 @@ async def api_test_whatsapp(request:Request)->dict:
     return WhatsAppNotifier(base_url,api_key,session_id,chat_id).send("✅ AT Network Dashboard test notification")
 @app.get("/api/remediation-actions")
 def api_remediation_actions()->dict:return {"items":recent_actions(100)}
+@app.post("/api/ai/chat")
+async def api_ai_chat(request:Request)->dict:
+    payload=await request.json();result=ai_center.chat(str(payload.get("message") or ""))
+    if not result.get("ok"):return JSONResponse(result,status_code=400)
+    return result
+@app.get("/api/ai/chat/history")
+def api_ai_chat_history()->dict:return {"items":ai_center.chat_history(100)}
+@app.post("/api/ai/report")
+async def api_ai_report(request:Request)->dict:
+    payload=await request.json()
+    try:hours=int(payload.get("hours") or 24)
+    except Exception:hours=24
+    result=ai_center.generate_report(hours)
+    if not result.get("ok"):return JSONResponse(result,status_code=400)
+    return result
+@app.get("/api/ai/reports")
+def api_ai_reports()->dict:return {"items":ai_center.recent_reports(20)}
+@app.get("/ai-center",response_class=HTMLResponse)
+def ai_center_page(request:Request)->HTMLResponse:return HTMLResponse(templates.get_template("ai_center.html").render(request=request,version=VERSION,page="ai-center",title="AI Center"))
 @app.post("/api/settings/test/ping")
 async def api_test_ping(request:Request)->dict:payload=await request.json();return _ping(str(payload.get("ping_target","")))
 @app.get("/api/network-changes")

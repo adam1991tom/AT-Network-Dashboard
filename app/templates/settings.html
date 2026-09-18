@@ -8,6 +8,7 @@
 <div class="settings-layout">
   <aside class="settings-nav card">
     <button class="settings-tab active" data-panel="general">General</button>
+    <button class="settings-tab" data-panel="ai">AI & Automation</button>
     <button class="settings-tab" data-panel="isp">ISP & Monitoring</button>
     <button class="settings-tab" data-panel="integrations">Integrations</button>
     <button class="settings-tab" data-panel="wifi">Wi-Fi Alerts</button>
@@ -34,6 +35,45 @@
         <label>Theme<select id="theme"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
         <label>Accent<select id="accent"><option value="green">Green</option><option value="blue">Blue</option><option value="purple">Purple</option><option value="amber">Amber</option></select></label>
         <label>Default graph range<select id="default_range_hours"><option value="24">24 Hours</option><option value="168">7 Days</option><option value="720">30 Days</option><option value="2160">90 Days</option></select></label>
+      </div>
+    </section>
+
+    <section class="card settings-content settings-panel" id="ai">
+      <div class="panel-heading"><div><h2>AI &amp; Automation</h2><p>Everything that lets the dashboard diagnose and fix things on its own — see the <a href="/ai-center">AI Center</a> page for its activity feed, chat and reports.</p></div></div>
+      <h3 class="settings-subgroup-label">Assistant</h3>
+      <div class="integration-block">
+        <div class="integration-title"><div><strong>AI Assistant (Gemini)</strong><span class="muted">Diagnoses incidents in plain English using Google's free-tier Gemini API. Whether it can also act is controlled below under Autonomous Actions.</span></div><input id="ai_enabled" type="checkbox"></div>
+        <div class="field-grid">
+          <label>Model<input id="ai_model" placeholder="gemini-3.6-flash"></label>
+          <label>Gemini API key<input id="gemini_api_key" type="password" placeholder="Leave blank to keep saved key"><span class="secret-status" id="gemini_status"></span></label>
+        </div>
+        <p class="muted">Get a free key at Google AI Studio (aistudio.google.com/apikey) — no card required for the free tier.</p>
+        <div class="test-row"><button type="button" class="secondary-button" id="test_gemini">Test Gemini Connection</button><span class="test-status" id="gemini_test_status">Not tested</span></div>
+      </div>
+      <div class="integration-block">
+        <div class="integration-title"><div><strong>Shell Agent (host command execution)</strong><span class="muted">Lets the AI Assistant run real commands on this server to fix Docker/System incidents, not just diagnose them. Guard the token like a root password.</span></div><input id="shell_agent_enabled" type="checkbox"></div>
+        <div class="field-grid">
+          <label>Agent URL<input id="shell_agent_url" placeholder="http://shell-agent:8299"></label>
+          <label>Agent token<input id="shell_agent_token" type="password" placeholder="Leave blank to keep saved token"><span class="secret-status" id="shell_agent_status"></span></label>
+        </div>
+        <p class="muted">Deploy the shell-agent service from docker-compose.yml first (it needs pid:host + privileged to reach the real host). Every command it runs is logged on the Incidents and AI Center pages with its full output.</p>
+        <div class="test-row"><button type="button" class="secondary-button" id="test_shell_agent">Test Shell Agent Connection</button><span class="test-status" id="shell_agent_test_status">Not tested</span></div>
+      </div>
+      <h3 class="settings-subgroup-label">Autonomous Actions</h3>
+      <div class="integration-block">
+        <div class="integration-title"><div><strong>Auto-Fix</strong><span class="muted">Master switch for automatic remediation. Without the AI Assistant enabled above, this only reboots a single access point on sustained high Wi-Fi retries.</span></div><input id="auto_remediation_enabled" type="checkbox"></div>
+        <div class="field-grid">
+          <label>Cooldown minutes per access point (rule-based fallback)<input id="auto_remediation_cooldown_minutes" type="number" min="5"></label>
+        </div>
+        <p class="muted">Requires UniFi to be enabled and connected (Integrations tab). Every action taken is logged on the Incidents and AI Center pages.</p>
+      </div>
+      <div class="integration-block">
+        <div class="integration-title"><div><strong>AI Autonomous Actions</strong><span class="muted">With the AI Assistant enabled above, let its diagnosis actually execute a fix instead of only explaining it: restart an AP, restart the gateway (drops the whole network ~60-90s), restart a Docker container, or — if the Shell Agent is also configured — run a command directly on the host.</span></div><input id="ai_autonomous_enabled" type="checkbox"></div>
+        <div class="field-grid">
+          <label>Cooldown minutes per incident+action<input id="ai_autonomous_cooldown_minutes" type="number" min="5"></label>
+          <label>Max shell commands per hour (global)<input id="ai_shell_max_actions_per_hour" type="number" min="1"></label>
+        </div>
+        <p class="muted">Every AI diagnosis is logged whether or not this is on. Turn this on only after reviewing a few diagnoses on the AI Center page.</p>
       </div>
     </section>
 
@@ -105,15 +145,7 @@
         <p class="muted">The session must already show "ready" in OpenWA (QR already scanned) — check the OpenWA dashboard if a test send fails.</p>
         <div class="test-row"><button type="button" class="secondary-button" id="test_whatsapp">Send WhatsApp Test</button><span class="test-status" id="whatsapp_test_status">Not tested</span></div>
       </div>
-      <div class="integration-block">
-        <div class="integration-title"><div><strong>AI Assistant (Gemini)</strong><span class="muted">Diagnoses incidents in plain English using Google's free-tier Gemini API. Whether it can also act is controlled separately under Wi-Fi Alerts &gt; AI Autonomous Actions.</span></div><input id="ai_enabled" type="checkbox"></div>
-        <div class="field-grid">
-          <label>Model<input id="ai_model" placeholder="gemini-2.0-flash"></label>
-          <label>Gemini API key<input id="gemini_api_key" type="password" placeholder="Leave blank to keep saved key"><span class="secret-status" id="gemini_status"></span></label>
-        </div>
-        <p class="muted">Get a free key at Google AI Studio (aistudio.google.com/apikey) — no card required for the free tier.</p>
-        <div class="test-row"><button type="button" class="secondary-button" id="test_gemini">Test Gemini Connection</button><span class="test-status" id="gemini_test_status">Not tested</span></div>
-      </div>
+      <p class="muted">The AI Assistant and Shell Agent integrations moved to the <strong>AI &amp; Automation</strong> tab.</p>
 
       <h3 class="integration-group-label">Media &amp; Entertainment</h3>
       <div id="integration-group-media"></div>
@@ -137,21 +169,7 @@
         <label>Recovery below %<input id="wifi_recovery_threshold" type="number"></label>
         <label>Recovery persists minutes<input id="wifi_recovery_minutes" type="number"></label>
       </div>
-      <h3 class="settings-subgroup-label">Auto-Fix</h3>
-      <div class="integration-block">
-        <div class="integration-title"><div><strong>Auto-Fix</strong><span class="muted">Master switch for automatic remediation. Without the AI Assistant configured (Integrations tab), this only reboots a single access point on sustained high retries.</span></div><input id="auto_remediation_enabled" type="checkbox"></div>
-        <div class="field-grid">
-          <label>Cooldown minutes per access point<input id="auto_remediation_cooldown_minutes" type="number" min="5"></label>
-        </div>
-        <p class="muted">Requires UniFi to be enabled and connected above. Every action taken is logged and visible on the Incidents page.</p>
-      </div>
-      <div class="integration-block">
-        <div class="integration-title"><div><strong>AI Autonomous Actions</strong><span class="muted">When the AI Assistant (Integrations tab) is enabled, let its diagnosis actually execute a fix instead of only explaining it. This can include restarting the gateway/router, which drops the whole network for ~60-90s.</span></div><input id="ai_autonomous_enabled" type="checkbox"></div>
-        <div class="field-grid">
-          <label>Cooldown minutes per incident+action<input id="ai_autonomous_cooldown_minutes" type="number" min="5"></label>
-        </div>
-        <p class="muted">Every AI diagnosis is logged on the Incidents page whether or not this is on. Turn this on only after reviewing a few diagnoses.</p>
-      </div>
+      <p class="muted">Automatic remediation is configured on the <strong>AI &amp; Automation</strong> tab.</p>
     </section>
 
     <section class="card settings-content settings-panel" id="notifications">
@@ -193,6 +211,7 @@
         <div class="info-tile"><span>Discord webhook</span><strong id="security_discord">Checking…</strong></div>
         <div class="info-tile"><span>WhatsApp API key</span><strong id="security_whatsapp">Checking…</strong></div>
         <div class="info-tile"><span>Gemini API key</span><strong id="security_gemini">Checking…</strong></div>
+        <div class="info-tile"><span>Shell agent token</span><strong id="security_shell_agent">Checking…</strong></div>
         <div class="info-tile"><span>Administrator login</span><strong>Enabled ✓</strong></div>
       </div>
       <h3 class="settings-subgroup-label">Administrator Account</h3>

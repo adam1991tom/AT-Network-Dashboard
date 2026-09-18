@@ -8,9 +8,10 @@ from app.database import connect
 from app.docker_routes import _HOSTS as DOCKER_HOSTS
 from app.docker_routes import _client_from_payload as _docker_client_from_payload
 from app.docker_routes import _plexmania_from_payload
+from app.integrations.shell_agent import ShellAgentClient
 from app.media_routes import _SERVICES as MEDIA_SERVICES
 from app.monitoring import _set_incident
-from app.settings_store import all_settings
+from app.settings_store import all_settings, get_secret
 
 # Separate, slower loop from the main 30s monitoring.collect_once: the 11
 # services here (8 media integrations + 2 docker agents + plexmania) are all
@@ -67,6 +68,36 @@ def _check_docker(con, cfg: dict[str, Any]) -> None:
             _set_incident(con, cfg, f"docker-agent-{host}-down", True, "warning", "System", host, f"Docker agent on {host} unreachable", str(exc), 60, 60)
 
 
+def _check_host_resources(con, cfg: dict[str, Any]) -> None:
+    if not _bool(cfg.get("shell_agent_enabled"), False):
+        return
+    url = str(cfg.get("shell_agent_url") or "").strip()
+    token = get_secret("shell_agent_token") or ""
+    if not url or not token:
+        return
+    client = ShellAgentClient(url, token)
+
+    disk = client.exec("df -P / | tail -1 | awk '{print $5}' | tr -d '%'", timeout=10)
+    if disk.get("ok") and not disk.get("blocked"):
+        try:
+            pct = int(str(disk.get("stdout", "")).strip())
+        except (TypeError, ValueError):
+            pct = None
+        if pct is not None:
+            severity = "critical" if pct >= 95 else "major" if pct >= 90 else "warning"
+            _set_incident(con, cfg, "host-disk-usage", pct >= 85, severity, "System", "Disk /", "Host disk usage high", f"Root filesystem is {pct}% full.", 300, 300)
+
+    mem = client.exec("free | awk '/Mem:/ {printf \"%.0f\", ($2-$7)/$2*100}'", timeout=10)
+    if mem.get("ok") and not mem.get("blocked"):
+        try:
+            pct = int(str(mem.get("stdout", "")).strip())
+        except (TypeError, ValueError):
+            pct = None
+        if pct is not None:
+            severity = "major" if pct >= 95 else "warning"
+            _set_incident(con, cfg, "host-memory-usage", pct >= 90, severity, "System", "Memory", "Host memory usage high", f"Host memory usage is {pct}%.", 300, 300)
+
+
 def _check_plexmania(con, cfg: dict[str, Any]) -> None:
     if not _bool(cfg.get("plexmania_agent_enabled"), False):
         return
@@ -94,6 +125,7 @@ def check_once() -> None:
     try:
         _check_media(con, cfg)
         _check_docker(con, cfg)
+        _check_host_resources(con, cfg)
         _check_plexmania(con, cfg)
         con.commit()
     finally:

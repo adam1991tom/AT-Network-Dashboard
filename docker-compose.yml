@@ -75,6 +75,31 @@ services:
     mem_limit: 256m
     cpus: 0.5
 
+  shell-agent:
+    build: ./shell-agent
+    container_name: at-network-dashboard-shell-agent
+    restart: unless-stopped
+    # Runs commands on the real host, not in a container - it joins PID 1's
+    # namespaces via nsenter, which needs both of these. No published port:
+    # only reachable from other containers on this compose network, same as
+    # docker-agent below. This plus the token auth and the denylist in
+    # app.py are the only things standing between "the AI can fix things on
+    # the server" and arbitrary code execution reachable from the LAN -
+    # keep all three.
+    pid: host
+    privileged: true
+    environment:
+      AGENT_TOKEN: ${SHELL_AGENT_TOKEN}
+      AGENT_HOST_LABEL: newtiny
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8299/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    mem_limit: 128m
+    cpus: 0.25
+
   docker-agent:
     build: ./docker-agent
     container_name: at-network-dashboard-docker-agent

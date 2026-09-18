@@ -100,6 +100,10 @@ def initialise() -> None:
         CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
         CREATE TABLE IF NOT EXISTS remediation_actions (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, incident_key TEXT NOT NULL, category TEXT, device TEXT, action TEXT NOT NULL, result_ok INTEGER NOT NULL DEFAULT 0, message TEXT NOT NULL DEFAULT '');
         CREATE INDEX IF NOT EXISTS idx_remediation_actions_ts ON remediation_actions(ts);
+        CREATE TABLE IF NOT EXISTS ai_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, window_hours INTEGER NOT NULL, report_text TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_ai_reports_ts ON ai_reports(ts);
+        CREATE TABLE IF NOT EXISTS ai_chat_log (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, role TEXT NOT NULL, message TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_ai_chat_log_ts ON ai_chat_log(ts);
         """)
         for table, column, definition in [
             ("ups_history", "runtime_seconds", "REAL"),
