@@ -105,6 +105,15 @@
         <p class="muted">The session must already show "ready" in OpenWA (QR already scanned) — check the OpenWA dashboard if a test send fails.</p>
         <div class="test-row"><button type="button" class="secondary-button" id="test_whatsapp">Send WhatsApp Test</button><span class="test-status" id="whatsapp_test_status">Not tested</span></div>
       </div>
+      <div class="integration-block">
+        <div class="integration-title"><div><strong>AI Assistant (Gemini)</strong><span class="muted">Diagnoses incidents in plain English using Google's free-tier Gemini API. Whether it can also act is controlled separately under Wi-Fi Alerts &gt; AI Autonomous Actions.</span></div><input id="ai_enabled" type="checkbox"></div>
+        <div class="field-grid">
+          <label>Model<input id="ai_model" placeholder="gemini-2.0-flash"></label>
+          <label>Gemini API key<input id="gemini_api_key" type="password" placeholder="Leave blank to keep saved key"><span class="secret-status" id="gemini_status"></span></label>
+        </div>
+        <p class="muted">Get a free key at Google AI Studio (aistudio.google.com/apikey) — no card required for the free tier.</p>
+        <div class="test-row"><button type="button" class="secondary-button" id="test_gemini">Test Gemini Connection</button><span class="test-status" id="gemini_test_status">Not tested</span></div>
+      </div>
 
       <h3 class="integration-group-label">Media &amp; Entertainment</h3>
       <div id="integration-group-media"></div>
@@ -130,11 +139,18 @@
       </div>
       <h3 class="settings-subgroup-label">Auto-Fix</h3>
       <div class="integration-block">
-        <div class="integration-title"><div><strong>Auto-Fix</strong><span class="muted">Automatically reboot a single access point when it reports sustained high retries. Never touches the gateway/router.</span></div><input id="auto_remediation_enabled" type="checkbox"></div>
+        <div class="integration-title"><div><strong>Auto-Fix</strong><span class="muted">Master switch for automatic remediation. Without the AI Assistant configured (Integrations tab), this only reboots a single access point on sustained high retries.</span></div><input id="auto_remediation_enabled" type="checkbox"></div>
         <div class="field-grid">
           <label>Cooldown minutes per access point<input id="auto_remediation_cooldown_minutes" type="number" min="5"></label>
         </div>
         <p class="muted">Requires UniFi to be enabled and connected above. Every action taken is logged and visible on the Incidents page.</p>
+      </div>
+      <div class="integration-block">
+        <div class="integration-title"><div><strong>AI Autonomous Actions</strong><span class="muted">When the AI Assistant (Integrations tab) is enabled, let its diagnosis actually execute a fix instead of only explaining it. This can include restarting the gateway/router, which drops the whole network for ~60-90s.</span></div><input id="ai_autonomous_enabled" type="checkbox"></div>
+        <div class="field-grid">
+          <label>Cooldown minutes per incident+action<input id="ai_autonomous_cooldown_minutes" type="number" min="5"></label>
+        </div>
+        <p class="muted">Every AI diagnosis is logged on the Incidents page whether or not this is on. Turn this on only after reviewing a few diagnoses.</p>
       </div>
     </section>
 
@@ -176,6 +192,7 @@
         <div class="info-tile"><span>UniFi API key</span><strong id="security_unifi">Checking…</strong></div>
         <div class="info-tile"><span>Discord webhook</span><strong id="security_discord">Checking…</strong></div>
         <div class="info-tile"><span>WhatsApp API key</span><strong id="security_whatsapp">Checking…</strong></div>
+        <div class="info-tile"><span>Gemini API key</span><strong id="security_gemini">Checking…</strong></div>
         <div class="info-tile"><span>Administrator login</span><strong>Enabled ✓</strong></div>
       </div>
       <h3 class="settings-subgroup-label">Administrator Account</h3>

@@ -16,6 +16,7 @@ from app.config import CONFIG
 from app.database import DB_PATH, initialise
 from app.dev14_routes import router as dev14_router
 from app.integrations.discord import DiscordNotifier
+from app.integrations.gemini import GeminiClient
 from app.integrations.nut import NutPiHttpClient
 from app.integrations.unifi import UniFiClient
 from app.integrations.uptime_kuma import UptimeKumaClient
@@ -196,6 +197,13 @@ async def api_test_discord(request:Request)->dict:
     payload=await request.json();webhook=str(payload.get("discord_webhook","")).strip() or (get_secret("discord_webhook") or "")
     if not webhook:return {"ok":False,"message":"Enter or save a Discord webhook"}
     return DiscordNotifier(webhook).send("✅ AT Network Dashboard test notification")
+@app.post("/api/settings/test/gemini")
+async def api_test_gemini(request:Request)->dict:
+    payload=await request.json();cfg=all_settings()
+    api_key=str(payload.get("gemini_api_key") or "").strip() or (get_secret("gemini_api_key") or "")
+    model=str(payload.get("ai_model") or cfg.get("ai_model") or "gemini-2.0-flash").strip()
+    if not api_key:return {"ok":False,"message":"Enter or save a Gemini API key"}
+    return GeminiClient(api_key,model).test_connection()
 @app.post("/api/settings/test/whatsapp")
 async def api_test_whatsapp(request:Request)->dict:
     payload=await request.json();cfg=all_settings()

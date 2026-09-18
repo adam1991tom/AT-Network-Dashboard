@@ -104,6 +104,26 @@ class UniFiClient:
                 errors.append(f"{path}: {exc}")
         return {"ok": False, "message": f"Unable to restart device {mac}", "details": errors[-3:]}
 
+    def restart_gateway(self, mac: str) -> dict[str, Any]:
+        """Reboot the gateway/router itself. Unlike restart_device, this deliberately
+        drops WAN/LAN connectivity for the whole site for roughly 60-90 seconds,
+        including this dashboard's own path to the UniFi controller — callers must
+        treat this as a full-network outage, not a routine device bounce."""
+        mac = (mac or "").strip()
+        if not mac:
+            return {"ok": False, "message": "No gateway MAC/identifier supplied"}
+        payload = {"cmd": "restart", "mac": mac}
+        errors: list[str] = []
+        for path in ("/proxy/network/api/s/default/cmd/devmgr", "/api/s/default/cmd/devmgr"):
+            try:
+                response = self._post(path, payload)
+                if response.ok:
+                    return {"ok": True, "message": f"Gateway restart command sent to {mac}", "endpoint": path, "status_code": response.status_code}
+                errors.append(f"{path}: HTTP {response.status_code}")
+            except requests.RequestException as exc:
+                errors.append(f"{path}: {exc}")
+        return {"ok": False, "message": f"Unable to restart gateway {mac}", "details": errors[-3:]}
+
     @staticmethod
     def _extract_rows(body: Any) -> list[dict[str, Any]]:
         if isinstance(body, list):

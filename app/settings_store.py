@@ -23,9 +23,10 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "notify_internet":"true","notify_wifi":"true","notify_power":"true","notify_gateway":"true","notify_system":"true","notification_min_severity":"warning","notification_cooldown_minutes":"15",
     "whatsapp_enabled":"false","whatsapp_base_url":"","whatsapp_session_id":"","whatsapp_chat_id":"","whatsapp_min_severity":"major","whatsapp_cooldown_minutes":"30",
     "auto_remediation_enabled":"false","auto_remediation_cooldown_minutes":"60",
+    "ai_enabled":"false","ai_model":"gemini-2.0-flash","ai_autonomous_enabled":"false","ai_autonomous_cooldown_minutes":"30",
     "maintenance_mode":"false","retention_days":"365","session_hours":"8","update_channel":"stable","auto_update_check":"true","notify_update_available":"true","setup_complete":"false",
 }
-SECRET_KEYS={"unifi_api_key","discord_webhook","uptime_kuma_api_key","sonarr_api_key","radarr_api_key","prowlarr_api_key","sabnzbd_api_key","tautulli_api_key","plex_token","nexroll_api_key","docker_agent_newtiny_token","docker_agent_beast_token","plexmania_agent_token","whatsapp_api_key"}; INSTALL_KEY_PATH=Path("/data/install.key")
+SECRET_KEYS={"unifi_api_key","discord_webhook","uptime_kuma_api_key","sonarr_api_key","radarr_api_key","prowlarr_api_key","sabnzbd_api_key","tautulli_api_key","plex_token","nexroll_api_key","docker_agent_newtiny_token","docker_agent_beast_token","plexmania_agent_token","whatsapp_api_key","gemini_api_key"}; INSTALL_KEY_PATH=Path("/data/install.key")
 _defaults_ready=False
 _defaults_lock=threading.Lock()
 

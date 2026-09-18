@@ -112,7 +112,7 @@ def _set_incident(
     if transition:
         if transition == "open":
             try:
-                remediation.maybe_fix(incident_key, category, device)
+                remediation.handle_incident_opened(incident_key, category, device, severity, summary, details)
             except Exception as exc:
                 print(f"auto-remediation failed: {exc}")
         notify_incident_transition(cfg, incident_key, transition, severity, category, device, summary, details)

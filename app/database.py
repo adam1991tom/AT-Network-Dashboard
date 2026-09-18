@@ -109,6 +109,9 @@ def initialise() -> None:
             ("incidents", "last_seen_at", "TEXT"),
             ("incidents", "operator_note", "TEXT NOT NULL DEFAULT ''"),
             ("incidents", "fault_reference", "TEXT NOT NULL DEFAULT ''"),
+            ("remediation_actions", "source", "TEXT NOT NULL DEFAULT 'rule'"),
+            ("remediation_actions", "explanation", "TEXT NOT NULL DEFAULT ''"),
+            ("remediation_actions", "confidence", "REAL"),
         ]:
             _ensure_column(con, table, column, definition)
         con.execute("CREATE INDEX IF NOT EXISTS idx_incidents_key_active ON incidents(incident_key,active)")
