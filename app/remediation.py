@@ -183,14 +183,17 @@ def _execute_action(action: str, incident_key: str, cfg: dict[str, Any], command
     if action == "run_command":
         if not command:
             return {"ok": False, "message": "No command was supplied"}
-        if _shell_rate_limited(cfg):
-            return {"ok": False, "message": "Global shell-action rate limit reached for this hour — skipped"}
         if not _bool(cfg.get("shell_agent_enabled")):
             return {"ok": False, "message": "Shell agent is not enabled"}
         agent_url = str(cfg.get("shell_agent_url") or "").strip()
         agent_token = get_secret("shell_agent_token") or ""
         if not agent_url or not agent_token:
             return {"ok": False, "message": "Shell agent is not configured"}
+        # Checked last, right before actually executing - it's not a pure read,
+        # it consumes a slot as a side effect, so a rejection for any of the
+        # reasons above must not burn quota for a command that never ran.
+        if _shell_rate_limited(cfg):
+            return {"ok": False, "message": "Global shell-action rate limit reached for this hour — skipped"}
         result = ShellAgentClient(agent_url, agent_token).exec(command, timeout=45)
         if result.get("blocked"):
             return {"ok": False, "message": result.get("message") or "Command blocked by safety denylist"}
@@ -221,11 +224,11 @@ def _execute_action(action: str, incident_key: str, cfg: dict[str, Any], command
     if action == "run_windows_command":
         if not command:
             return {"ok": False, "message": "No command was supplied"}
-        if _shell_rate_limited(cfg):
-            return {"ok": False, "message": "Global shell-action rate limit reached for this hour — skipped"}
         client, error = _plexmania_from_payload({})
         if error:
             return {"ok": False, "message": error.get("message", "plexmania agent not configured")}
+        if _shell_rate_limited(cfg):
+            return {"ok": False, "message": "Global shell-action rate limit reached for this hour — skipped"}
         result = client.exec(command, timeout=45)
         if result.get("blocked"):
             return {"ok": False, "message": result.get("message") or "Command blocked by safety denylist"}

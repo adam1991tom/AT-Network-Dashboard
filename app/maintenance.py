@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from app.database import connect
+from app.database import connect, write_transaction
 from app.integrations.gemini import GeminiClient
 from app.integrations.shell_agent import ShellAgentClient
 from app.remediation import _bool, _log
@@ -47,17 +47,39 @@ def _active_run(con) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def _launch(client: ShellAgentClient, script_path: str, con) -> dict[str, Any]:
-    # Fire-and-forget: the script can run for many minutes (apt upgrade + pulling
-    # several Docker images), far longer than any single HTTP request should
-    # block for. `disown` detaches it from this shell so it survives the exec
-    # call returning; the log file is how we track progress afterwards.
+def _launch(client: ShellAgentClient, script_path: str) -> dict[str, Any]:
+    """Checks no run is already active, then launches - and only records a
+    "running" row if the launch command actually succeeded. A blocked/failed
+    launch must not leave a fake "running" row behind (previously it did,
+    and that row would then sit looking like a real stuck run for up to
+    STALE_RUN_TIMEOUT_SECONDS before self-clearing).
+
+    The exec() network call deliberately happens outside any DB transaction -
+    it can take up to its 15s timeout, and holding SQLite's write lock for
+    that long would block every other writer (the 30s monitoring loop
+    included). That leaves a small check-then-launch race against a
+    concurrent call (scheduler vs. manual "Run Now"); the underlying script's
+    own flock prevents it from actually running twice, so the only visible
+    effect would be a harmless duplicate "running" row that the poll loop
+    resolves like any other.
+    """
+    con = connect()
+    try:
+        if _active_run(con):
+            return {"ok": False, "message": "A maintenance run is already in progress"}
+    finally:
+        con.close()
+
     launch_cmd = f"nohup {script_path} > /dev/null 2>&1 & disown"
     result = client.exec(launch_cmd, timeout=15)
-    started_at = datetime.now(timezone.utc).isoformat()
-    con.execute("INSERT INTO maintenance_runs(started_at,status) VALUES (?,?)", (started_at, "running"))
-    con.commit()
-    return result
+    if result.get("blocked") or not result.get("ok"):
+        return {"ok": False, "message": result.get("message") or "Launch command failed", "blocked": result.get("blocked", False)}
+
+    def op(con) -> None:
+        con.execute("INSERT INTO maintenance_runs(started_at,status) VALUES (?,?)", (datetime.now(timezone.utc).isoformat(), "running"))
+
+    write_transaction(op)
+    return {"ok": True}
 
 
 def _summarize(cfg: dict[str, Any], log_text: str) -> str:
@@ -71,7 +93,7 @@ def _summarize(cfg: dict[str, Any], log_text: str) -> str:
         "whether a reboot is now required, and anything the owner should personally look at. Do not just restate the "
         "log verbatim.\n\nRaw log (tail):\n\n" + log_text[-8000:]
     )
-    result = client.chat(prompt, max_tokens=500)
+    result = client.chat(prompt, max_tokens=700)
     return result.get("text", "") if result.get("ok") else ""
 
 
@@ -111,13 +133,17 @@ def check_once() -> None:
     con = connect()
     try:
         run = _active_run(con)
-        if run:
-            _poll_active_run(client, cfg, con, run)
-        elif _due_for_scheduled_run(cfg):
-            script_path = str(cfg.get("maintenance_script_path") or "/home/adam/smart_maintenance.sh").strip()
-            _launch(client, script_path, con)
     finally:
         con.close()
+    if run:
+        con = connect()
+        try:
+            _poll_active_run(client, cfg, con, run)
+        finally:
+            con.close()
+    elif _due_for_scheduled_run(cfg):
+        script_path = str(cfg.get("maintenance_script_path") or "/home/adam/smart_maintenance.sh").strip()
+        _launch(client, script_path)
 
 
 def _worker() -> None:
@@ -143,17 +169,11 @@ def run_now() -> dict[str, Any]:
     client = _shell_client(cfg)
     if not client:
         return {"ok": False, "message": "Shell agent is not enabled/configured — required to run maintenance"}
-    con = connect()
-    try:
-        if _active_run(con):
-            return {"ok": False, "message": "A maintenance run is already in progress"}
-        script_path = str(cfg.get("maintenance_script_path") or "/home/adam/smart_maintenance.sh").strip()
-        launch_result = _launch(client, script_path, con)
-        if launch_result.get("blocked"):
-            return {"ok": False, "message": launch_result.get("message") or "Launch command was blocked"}
-        return {"ok": True, "message": "Maintenance run launched — check back in a few minutes for the summary."}
-    finally:
-        con.close()
+    script_path = str(cfg.get("maintenance_script_path") or "/home/adam/smart_maintenance.sh").strip()
+    result = _launch(client, script_path)
+    if not result.get("ok"):
+        return result
+    return {"ok": True, "message": "Maintenance run launched — check back in a few minutes for the summary."}
 
 
 def recent_runs(limit: int = 20) -> list[dict[str, Any]]:

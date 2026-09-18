@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
@@ -52,25 +53,35 @@ def _gather_state() -> dict[str, Any]:
     finally:
         con.close()
 
-    all_containers: list[tuple[str, str, str]] = []  # (host, name, status)
-    for host in _DOCKER_HOSTS:
+    # Each of these is a slow-ish independent network call (docker-agent's own
+    # per-container stats fetch alone can take a couple of seconds per host) -
+    # running them one after another added several seconds of latency to every
+    # single chat message. They don't depend on each other, so fetch them
+    # concurrently instead.
+    def _fetch_docker(host: str) -> list[tuple[str, str, str]]:
         client, error = _docker_client_from_payload(host, {})
         if error:
-            continue
+            return []
         try:
             data = client.containers()
-            for c in data.get("containers", []):
-                all_containers.append((host, str(c.get("name")), str(c.get("status"))))
+            return [(host, str(c.get("name")), str(c.get("status"))) for c in data.get("containers", [])]
         except Exception:
-            continue
+            return []
 
-    plexmania_processes: list[dict[str, Any]] = []
-    plex_client, plex_error = _plexmania_from_payload({})
-    if not plex_error:
+    def _fetch_plexmania() -> list[dict[str, Any]]:
+        plex_client, plex_error = _plexmania_from_payload({})
+        if plex_error:
+            return []
         try:
-            plexmania_processes = plex_client.processes().get("processes", [])
+            return plex_client.processes().get("processes", [])
         except Exception:
-            plexmania_processes = []
+            return []
+
+    with ThreadPoolExecutor(max_workers=len(_DOCKER_HOSTS) + 1) as pool:
+        docker_futures = [pool.submit(_fetch_docker, host) for host in _DOCKER_HOSTS]
+        plexmania_future = pool.submit(_fetch_plexmania)
+        all_containers: list[tuple[str, str, str]] = [row for f in docker_futures for row in f.result()]
+        plexmania_processes = plexmania_future.result()
 
     snapshot = live_snapshot()
     gateway = snapshot.get("gateway") or {}
@@ -89,8 +100,15 @@ def _gather_state() -> dict[str, Any]:
     if not recent:
         lines.append("(none)")
 
-    lines.append("\n=== Docker containers (host/name: status) ===")
-    lines.extend([f"{h}/{n}: {s}" for h, n, s in all_containers] or ["(none known, or Docker agents not configured)"])
+    # Only non-running containers go in the narrative text - with 20+ containers
+    # on newtiny alone, listing all of them on every single chat/decide call
+    # would burn a lot of tokens (cost + latency + free-tier rate limit) for no
+    # benefit on the common case. The full list still goes to the decide-prompt
+    # separately (via state["containers"]), since that one genuinely needs every
+    # name to validate a restart target.
+    problem_containers = [f"{h}/{n}: {s}" for h, n, s in all_containers if s != "running"]
+    lines.append("\n=== Docker containers not currently running ===")
+    lines.extend(problem_containers or ["(none - everything is running)"])
 
     lines.append("\n=== plexmania (10.0.0.6) processes ===")
     lines.extend([f"{p.get('name')}: running={p.get('running')} port_open={p.get('port_open')}" for p in plexmania_processes] or ["(not configured or unreachable)"])
@@ -132,11 +150,16 @@ def _decide_prompt(message: str, state: dict[str, Any]) -> str:
         'for restart_plexmania_process: the exact process name. Empty for other actions>", '
         '"command": "<exact command - shell command for run_command (runs on newtiny), PowerShell command for '
         'run_windows_command (runs on the plexmania Windows host), else empty>", '
-        '"reasoning": "<one sentence>"}\n\n'
+        '"reasoning": "<one sentence on why this action is or is not warranted>", '
+        '"answer": "<a complete, helpful natural-language reply to the user\'s message, used only when intent is '
+        '"question" (or no valid action was found) - so write a real answer here every time, not a placeholder. '
+        "Never write as if you are currently performing, initiating, or have just completed an action here (e.g. "
+        'never say "restarting now") - if intent is "action" this field is ignored, so leave it empty in that case>"'
+        "}\n\n"
         "Rules: only set intent to \"action\" if the user is clearly asking you to fix/restart/run something now, not "
         "just describing a problem. target and host must be copied exactly from the lists above (as separate fields, "
         "never combined) — never invent a name. If nothing matches or you're unsure, use action \"none\" and intent "
-        "\"question\"."
+        "\"question\" (with a real \"answer\")."
     )
 
 
@@ -195,14 +218,14 @@ def _execute_chat_action(action: str, host: str, target: str, command: str, cfg:
     if action == "run_command":
         if not command:
             return {"ok": False, "message": "No command was supplied"}
-        if remediation._shell_rate_limited(cfg):
-            return {"ok": False, "message": "Global shell-action rate limit reached for this hour — try again later"}
         if not remediation._bool(cfg.get("shell_agent_enabled")):
             return {"ok": False, "message": "Shell agent is not enabled"}
         agent_url = str(cfg.get("shell_agent_url") or "").strip()
         agent_token = get_secret("shell_agent_token") or ""
         if not agent_url or not agent_token:
             return {"ok": False, "message": "Shell agent is not configured"}
+        if remediation._shell_rate_limited(cfg):
+            return {"ok": False, "message": "Global shell-action rate limit reached for this hour — try again later"}
         result = ShellAgentClient(agent_url, agent_token).exec(command, timeout=45)
         if result.get("blocked"):
             return {"ok": False, "message": result.get("message") or "Command blocked by safety denylist"}
@@ -218,11 +241,11 @@ def _execute_chat_action(action: str, host: str, target: str, command: str, cfg:
     if action == "run_windows_command":
         if not command:
             return {"ok": False, "message": "No command was supplied"}
-        if remediation._shell_rate_limited(cfg):
-            return {"ok": False, "message": "Global shell-action rate limit reached for this hour — try again later"}
         client, error = _plexmania_from_payload({})
         if error:
             return {"ok": False, "message": error.get("message", "plexmania agent not configured")}
+        if remediation._shell_rate_limited(cfg):
+            return {"ok": False, "message": "Global shell-action rate limit reached for this hour — try again later"}
         result = client.exec(command, timeout=45)
         if result.get("blocked"):
             return {"ok": False, "message": result.get("message") or "Command blocked by safety denylist"}
@@ -274,11 +297,15 @@ def chat(message: str) -> dict[str, Any]:
             )
             reply_text = f"{'Done' if exec_result.get('ok') else 'Tried, but it failed'} — {action.replace('_', ' ')} on {device} {outcome}.\n\n{exec_result.get('message') or ''}".strip()
         else:
-            no_action_reason = str((data or {}).get("reasoning") or "").strip() or "no matching action/target was found for this message"
-            answer = client.chat(_qa_prompt(message, state["text"], no_action_reason))
-            if not answer.get("ok"):
-                return answer
-            reply_text = answer["text"]
+            # No second Gemini call needed - the decide-prompt already asked for a
+            # real "answer" whenever it isn't taking an action, so reuse that.
+            reply_text = str((data or {}).get("answer") or "").strip()
+            if not reply_text:
+                no_action_reason = str((data or {}).get("reasoning") or "").strip() or "no matching action/target was found for this message"
+                answer = client.chat(_qa_prompt(message, state["text"], no_action_reason))
+                if not answer.get("ok"):
+                    return answer
+                reply_text = answer["text"]
     else:
         answer = client.chat(_qa_prompt(message, state["text"], "autonomous actions are currently switched off in Settings"))
         if not answer.get("ok"):
@@ -332,11 +359,11 @@ def generate_report(hours: int = 24) -> dict[str, Any]:
     con = connect()
     try:
         incidents = con.execute(
-            "SELECT category,device,severity,summary,started_at,ended_at,active FROM incidents WHERE datetime(started_at) >= datetime('now', ?) ORDER BY started_at DESC",
+            "SELECT category,device,severity,summary,started_at,ended_at,active FROM incidents WHERE julianday(started_at) >= julianday('now', ?) ORDER BY started_at DESC",
             (f"-{hours} hours",),
         ).fetchall()
         actions = con.execute(
-            "SELECT ts,category,device,action,result_ok,source,explanation FROM remediation_actions WHERE datetime(ts) >= datetime('now', ?) ORDER BY ts DESC",
+            "SELECT ts,category,device,action,result_ok,source,explanation FROM remediation_actions WHERE julianday(ts) >= julianday('now', ?) ORDER BY ts DESC",
             (f"-{hours} hours",),
         ).fetchall()
     finally:
@@ -361,7 +388,7 @@ def generate_report(hours: int = 24) -> dict[str, Any]:
             "150-300 words), use short paragraphs or bullet points, and don't just restate every log line verbatim.\n\n"
             + "\n".join(lines)
         )
-        result = client.chat(prompt, max_tokens=1200)
+        result = client.chat(prompt, max_tokens=1600)
         if not result.get("ok"):
             return result
         text = result["text"]
@@ -378,23 +405,31 @@ def generate_report(hours: int = 24) -> dict[str, Any]:
 def _gather_trends(hours: int) -> str:
     con = connect()
     try:
+        # julianday(), not datetime(), because that's what idx_*_jd (database.py)
+        # actually indexes - datetime() comparisons silently fall back to a full
+        # table scan on these history tables, which get large fast at a 30s
+        # collection interval.
         wifi_rows = con.execute(
-            "SELECT ap_name,band,AVG(retries) avg_retries,MAX(retries) max_retries,AVG(utilization) avg_util,AVG(clients) avg_clients "
-            "FROM wifi_history WHERE datetime(ts) >= datetime('now', ?) GROUP BY ap_name,band ORDER BY max_retries DESC",
+            "SELECT ap_name,band,COALESCE(AVG(retries),0) avg_retries,COALESCE(MAX(retries),0) max_retries,"
+            "COALESCE(AVG(utilization),0) avg_util,COALESCE(AVG(clients),0) avg_clients "
+            "FROM wifi_history WHERE julianday(ts) >= julianday('now', ?) GROUP BY ap_name,band ORDER BY max_retries DESC",
             (f"-{hours} hours",),
         ).fetchall()
         speed_row = con.execute(
-            "SELECT AVG(download) avg_down,MIN(download) min_down,AVG(upload) avg_up,AVG(latency) avg_latency,COUNT(*) n "
-            "FROM speedtest_history WHERE datetime(ts) >= datetime('now', ?)",
+            "SELECT COALESCE(AVG(download),0) avg_down,COALESCE(MIN(download),0) min_down,COALESCE(AVG(upload),0) avg_up,"
+            "COALESCE(AVG(latency),0) avg_latency,COUNT(*) n "
+            "FROM speedtest_history WHERE julianday(ts) >= julianday('now', ?)",
             (f"-{hours} hours",),
         ).fetchone()
         gw_row = con.execute(
-            "SELECT AVG(cpu) avg_cpu,MAX(cpu) max_cpu,AVG(memory) avg_mem,MAX(memory) max_mem,AVG(temperature) avg_temp,"
-            "SUM(rx_errors+tx_errors+rx_dropped+tx_dropped) total_errors FROM gateway_history WHERE datetime(ts) >= datetime('now', ?)",
+            "SELECT COALESCE(AVG(cpu),0) avg_cpu,COALESCE(MAX(cpu),0) max_cpu,COALESCE(AVG(memory),0) avg_mem,"
+            "COALESCE(MAX(memory),0) max_mem,COALESCE(AVG(temperature),0) avg_temp,"
+            "COALESCE(SUM(rx_errors+tx_errors+rx_dropped+tx_dropped),0) total_errors,COUNT(*) n "
+            "FROM gateway_history WHERE julianday(ts) >= julianday('now', ?)",
             (f"-{hours} hours",),
         ).fetchone()
         resolved_incident_count = con.execute(
-            "SELECT COUNT(*) FROM incidents WHERE active=0 AND datetime(started_at) >= datetime('now', ?)", (f"-{hours} hours",)
+            "SELECT COUNT(*) FROM incidents WHERE active=0 AND julianday(started_at) >= julianday('now', ?)", (f"-{hours} hours",)
         ).fetchone()[0]
     finally:
         con.close()
@@ -418,7 +453,7 @@ def _gather_trends(hours: int) -> str:
         lines.append("(no speed tests in this window)")
 
     lines.append("\n=== Gateway trend ===")
-    if gw_row and gw_row["avg_cpu"] is not None:
+    if gw_row and gw_row["n"]:
         lines.append(
             f"Avg CPU {gw_row['avg_cpu']:.0f}% (peak {gw_row['max_cpu']:.0f}%), avg memory {gw_row['avg_mem']:.0f}% (peak {gw_row['max_mem']:.0f}%), "
             f"avg temperature {gw_row['avg_temp']:.0f}°C, total interface errors/drops {int(gw_row['total_errors'] or 0)}"
@@ -445,7 +480,7 @@ def generate_network_health_report(hours: int = 168) -> dict[str, Any]:
         "something stands out — if everything genuinely looks healthy, say so briefly rather than inventing "
         "concerns.\n\n" + trends
     )
-    result = client.chat(prompt, max_tokens=1200)
+    result = client.chat(prompt, max_tokens=1600)
     if not result.get("ok"):
         return result
     text = result["text"]

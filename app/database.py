@@ -123,7 +123,8 @@ def initialise() -> None:
             _ensure_column(con, table, column, definition)
         con.execute("CREATE INDEX IF NOT EXISTS idx_incidents_key_active ON incidents(incident_key,active)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_incidents_active_started ON incidents(active,started_at)")
-        for table in ("ping_history", "speedtest_history", "gateway_history", "ups_history", "wifi_history", "unifi_wan_history", "unifi_ap_traffic_history"):
+        con.execute("CREATE INDEX IF NOT EXISTS idx_incidents_started_jd ON incidents(julianday(started_at))")
+        for table in ("ping_history", "speedtest_history", "gateway_history", "ups_history", "wifi_history", "unifi_wan_history", "unifi_ap_traffic_history", "remediation_actions"):
             con.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_jd ON {table}(julianday(ts))")
         con.commit()
         con.execute("PRAGMA optimize")

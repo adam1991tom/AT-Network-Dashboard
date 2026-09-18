@@ -3,7 +3,7 @@ import io,sqlite3,zipfile
 from datetime import datetime,timedelta,timezone
 from app.database import DB_PATH,connect
 
-TABLES=('speedtest_history','ping_history','gateway_history','wifi_history','ups_history','incidents','unifi_wan_history','unifi_ap_traffic_history')
+TABLES=('speedtest_history','ping_history','gateway_history','wifi_history','ups_history','incidents','unifi_wan_history','unifi_ap_traffic_history','remediation_actions','ai_reports','ai_chat_log','maintenance_runs')
 def _exists(con,t):return bool(con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(t,)).fetchone())
 def status():
  con=connect();out={"database_bytes":DB_PATH.stat().st_size if DB_PATH.exists() else 0,"tables":{}}
@@ -20,9 +20,15 @@ def apply_retention(days:int):
  if not days:return {"ok":True,"deleted":0}
  cutoff=(datetime.now(timezone.utc)-timedelta(days=days)).isoformat();con=connect();deleted=0
  try:
-  for t in ('speedtest_history','ping_history','gateway_history','wifi_history','ups_history','unifi_wan_history','unifi_ap_traffic_history'):
+  # incidents and remediation_actions are deliberately excluded here - they're
+  # the audit trail (evidence reporting, "what has the AI done"), not raw
+  # samples, so they're kept indefinitely like incidents always have been.
+  # ai_chat_log/ai_reports/maintenance_runs are more like routine logs and are
+  # fine to prune.
+  for t,col in (('speedtest_history','ts'),('ping_history','ts'),('gateway_history','ts'),('wifi_history','ts'),('ups_history','ts'),
+                ('unifi_wan_history','ts'),('unifi_ap_traffic_history','ts'),('ai_chat_log','ts'),('ai_reports','ts'),('maintenance_runs','started_at')):
    if _exists(con,t):
-    cur=con.execute(f'DELETE FROM {t} WHERE datetime(ts)<datetime(?)',(cutoff,));deleted+=max(cur.rowcount,0)
+    cur=con.execute(f'DELETE FROM {t} WHERE datetime({col})<datetime(?)',(cutoff,));deleted+=max(cur.rowcount,0)
   con.commit();return {"ok":True,"deleted":deleted,"cutoff":cutoff}
  finally:con.close()
 def backup_bytes():

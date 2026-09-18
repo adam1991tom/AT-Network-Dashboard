@@ -19,7 +19,7 @@ class GeminiClient:
         self.api_key = (api_key or "").strip()
         self.model = (model or "gemini-3.6-flash").strip()
 
-    def _generate_text(self, prompt: str, max_tokens: int = 1024, json_mode: bool = True) -> dict[str, Any]:
+    def _generate_text(self, prompt: str, max_tokens: int = 2048, json_mode: bool = True) -> dict[str, Any]:
         if not self.api_key:
             return {"ok": False, "message": "Gemini API key not configured"}
         url = f"{API_BASE}/{self.model}:generateContent"
@@ -47,25 +47,42 @@ class GeminiClient:
             return {"ok": False, "message": detail or f"HTTP {response.status_code}"}
         try:
             body = response.json()
-            text = body["candidates"][0]["content"]["parts"][0]["text"]
+            candidate = body["candidates"][0]
+            # Concatenate every part's text rather than just parts[0] - newer
+            # "thinking"-capable models can split a response across multiple
+            # parts, and reading only the first would silently drop or miss
+            # content instead of failing loudly.
+            parts = candidate["content"]["parts"]
+            text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
         except (KeyError, IndexError, TypeError, ValueError):
             return {"ok": False, "message": "Gemini returned no usable content (likely blocked by safety filters)"}
+        if not text and candidate.get("finishReason") == "MAX_TOKENS":
+            return {"ok": False, "message": "Gemini's response was cut off before producing any output (hit maxOutputTokens) — try a shorter prompt or increase max_tokens"}
         return {"ok": True, "text": text}
 
     def _generate(self, prompt: str) -> dict[str, Any]:
         result = self._generate_text(prompt, json_mode=True)
         if not result.get("ok"):
             return result
+        text = result["text"].strip()
+        # responseMimeType=application/json should prevent this, but models
+        # occasionally still wrap output in a markdown code fence - strip it
+        # defensively rather than fail a well-formed response over formatting.
+        if text.startswith("```"):
+            text = text.strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:]
+            text = text.strip()
         try:
-            parsed = json.loads(result["text"])
+            parsed = json.loads(text)
         except (TypeError, ValueError):
-            return {"ok": False, "message": "Gemini response was not valid JSON", "raw": result["text"][:500]}
+            return {"ok": False, "message": "Gemini response was not valid JSON", "raw": text[:500]}
         return {"ok": True, "data": parsed}
 
     def diagnose_incident(self, prompt: str) -> dict[str, Any]:
         return self._generate(prompt)
 
-    def chat(self, prompt: str, max_tokens: int = 1500) -> dict[str, Any]:
+    def chat(self, prompt: str, max_tokens: int = 2048) -> dict[str, Any]:
         """Free-form text response, not constrained to JSON — for the AI Ops
         Center chat and natural-language reports."""
         result = self._generate_text(prompt, max_tokens=max_tokens, json_mode=False)
