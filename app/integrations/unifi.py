@@ -85,6 +85,25 @@ class UniFiClient:
                 errors.append(f"{path}: {exc}")
         return {"ok": False, "message": "Unable to start UniFi speed test", "details": errors[-3:]}
 
+    def restart_device(self, mac: str) -> dict[str, Any]:
+        """Reboot a single UniFi device (access point) in place. Reversible and scoped to
+        one device only — callers must never pass the gateway/router's own MAC here, since
+        that would cut off the controller connection this dashboard depends on."""
+        mac = (mac or "").strip()
+        if not mac:
+            return {"ok": False, "message": "No device MAC/identifier supplied"}
+        payload = {"cmd": "restart", "mac": mac}
+        errors: list[str] = []
+        for path in ("/proxy/network/api/s/default/cmd/devmgr", "/api/s/default/cmd/devmgr"):
+            try:
+                response = self._post(path, payload)
+                if response.ok:
+                    return {"ok": True, "message": f"Restart command sent to {mac}", "endpoint": path, "status_code": response.status_code}
+                errors.append(f"{path}: HTTP {response.status_code}")
+            except requests.RequestException as exc:
+                errors.append(f"{path}: {exc}")
+        return {"ok": False, "message": f"Unable to restart device {mac}", "details": errors[-3:]}
+
     @staticmethod
     def _extract_rows(body: Any) -> list[dict[str, Any]]:
         if isinstance(body, list):

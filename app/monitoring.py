@@ -8,6 +8,7 @@ from typing import Any
 
 from app.database import connect
 from app.notifications import notify_incident_transition
+from app import remediation
 
 _history_backfilled = False
 _condition_since: dict[str, float] = {}
@@ -109,6 +110,11 @@ def _set_incident(
     after_active = bool(_active_incident(con, incident_key))
     transition = "open" if not before_active and after_active else "resolved" if before_active and not after_active else None
     if transition:
+        if transition == "open":
+            try:
+                remediation.maybe_fix(incident_key, category, device)
+            except Exception as exc:
+                print(f"auto-remediation failed: {exc}")
         notify_incident_transition(cfg, incident_key, transition, severity, category, device, summary, details)
 
 

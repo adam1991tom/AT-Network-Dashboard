@@ -92,6 +92,19 @@
         <label>Webhook<input id="discord_webhook" type="password" placeholder="Leave blank to keep saved webhook"><span class="secret-status" id="discord_status"></span></label>
         <div class="test-row"><button type="button" class="secondary-button" id="test_discord">Send Discord Test</button><span class="test-status" id="discord_test_status">Not tested</span></div>
       </div>
+      <div class="integration-block">
+        <div class="integration-title"><div><strong>WhatsApp (OpenWA)</strong><span class="muted">Only for major/critical incidents, via your own self-hosted OpenWA server.</span></div><input id="whatsapp_enabled" type="checkbox"></div>
+        <div class="field-grid">
+          <label>OpenWA server URL<input id="whatsapp_base_url" placeholder="http://10.0.0.2:2785"></label>
+          <label>OpenWA session ID<input id="whatsapp_session_id" placeholder="e.g. e27c3307-6cbb-4c44-b2ca-ba45eba925e5"></label>
+          <label>Recipient chat id<input id="whatsapp_chat_id" placeholder="447123456789@c.us"></label>
+          <label>API key<input id="whatsapp_api_key" type="password" placeholder="Leave blank to keep saved key"><span class="secret-status" id="whatsapp_status"></span></label>
+          <label>Minimum severity<select id="whatsapp_min_severity"><option value="major">Major</option><option value="critical">Critical</option></select></label>
+          <label>Cooldown minutes<input id="whatsapp_cooldown_minutes" type="number" min="1"></label>
+        </div>
+        <p class="muted">The session must already show "ready" in OpenWA (QR already scanned) — check the OpenWA dashboard if a test send fails.</p>
+        <div class="test-row"><button type="button" class="secondary-button" id="test_whatsapp">Send WhatsApp Test</button><span class="test-status" id="whatsapp_test_status">Not tested</span></div>
+      </div>
 
       <h3 class="integration-group-label">Media &amp; Entertainment</h3>
       <div id="integration-group-media"></div>
@@ -114,6 +127,14 @@
       <div class="field-grid three-col">
         <label>Recovery below %<input id="wifi_recovery_threshold" type="number"></label>
         <label>Recovery persists minutes<input id="wifi_recovery_minutes" type="number"></label>
+      </div>
+      <h3 class="settings-subgroup-label">Auto-Fix</h3>
+      <div class="integration-block">
+        <div class="integration-title"><div><strong>Auto-Fix</strong><span class="muted">Automatically reboot a single access point when it reports sustained high retries. Never touches the gateway/router.</span></div><input id="auto_remediation_enabled" type="checkbox"></div>
+        <div class="field-grid">
+          <label>Cooldown minutes per access point<input id="auto_remediation_cooldown_minutes" type="number" min="5"></label>
+        </div>
+        <p class="muted">Requires UniFi to be enabled and connected above. Every action taken is logged and visible on the Incidents page.</p>
       </div>
     </section>
 
@@ -154,6 +175,7 @@
         <div class="info-tile"><span>Secret encryption</span><strong id="security_encryption">Checking…</strong></div>
         <div class="info-tile"><span>UniFi API key</span><strong id="security_unifi">Checking…</strong></div>
         <div class="info-tile"><span>Discord webhook</span><strong id="security_discord">Checking…</strong></div>
+        <div class="info-tile"><span>WhatsApp API key</span><strong id="security_whatsapp">Checking…</strong></div>
         <div class="info-tile"><span>Administrator login</span><strong>Enabled ✓</strong></div>
       </div>
       <h3 class="settings-subgroup-label">Administrator Account</h3>

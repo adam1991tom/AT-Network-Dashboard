@@ -19,6 +19,8 @@ from app.integrations.discord import DiscordNotifier
 from app.integrations.nut import NutPiHttpClient
 from app.integrations.unifi import UniFiClient
 from app.integrations.uptime_kuma import UptimeKumaClient
+from app.integrations.whatsapp import WhatsAppNotifier
+from app.remediation import recent_actions
 from app.docker_routes import router as docker_router
 from app.media_routes import router as media_router
 from app.infra_monitoring import start_infra_monitoring
@@ -194,6 +196,19 @@ async def api_test_discord(request:Request)->dict:
     payload=await request.json();webhook=str(payload.get("discord_webhook","")).strip() or (get_secret("discord_webhook") or "")
     if not webhook:return {"ok":False,"message":"Enter or save a Discord webhook"}
     return DiscordNotifier(webhook).send("✅ AT Network Dashboard test notification")
+@app.post("/api/settings/test/whatsapp")
+async def api_test_whatsapp(request:Request)->dict:
+    payload=await request.json();cfg=all_settings()
+    base_url=str(payload.get("whatsapp_base_url") or cfg.get("whatsapp_base_url") or "").strip()
+    session_id=str(payload.get("whatsapp_session_id") or cfg.get("whatsapp_session_id") or "").strip()
+    chat_id=str(payload.get("whatsapp_chat_id") or cfg.get("whatsapp_chat_id") or "").strip()
+    api_key=str(payload.get("whatsapp_api_key") or "").strip() or (get_secret("whatsapp_api_key") or "")
+    if not base_url:return {"ok":False,"message":"Enter your OpenWA server URL"}
+    if not session_id:return {"ok":False,"message":"Enter the OpenWA session ID"}
+    if not chat_id:return {"ok":False,"message":"Enter the WhatsApp recipient (e.g. 447123456789@c.us)"}
+    return WhatsAppNotifier(base_url,api_key,session_id,chat_id).send("✅ AT Network Dashboard test notification")
+@app.get("/api/remediation-actions")
+def api_remediation_actions()->dict:return {"items":recent_actions(100)}
 @app.post("/api/settings/test/ping")
 async def api_test_ping(request:Request)->dict:payload=await request.json();return _ping(str(payload.get("ping_target","")))
 @app.get("/api/network-changes")

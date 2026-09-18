@@ -21,9 +21,11 @@ DEFAULT_SETTINGS: dict[str, str] = {
     "plexmania_agent_enabled":"false","plexmania_agent_url":"http://10.0.0.6:8299",
     "wifi_warning_threshold":"35","wifi_major_threshold":"40","wifi_critical_threshold":"50","wifi_persist_minutes":"10","wifi_recovery_threshold":"20","wifi_recovery_minutes":"10",
     "notify_internet":"true","notify_wifi":"true","notify_power":"true","notify_gateway":"true","notify_system":"true","notification_min_severity":"warning","notification_cooldown_minutes":"15",
+    "whatsapp_enabled":"false","whatsapp_base_url":"","whatsapp_session_id":"","whatsapp_chat_id":"","whatsapp_min_severity":"major","whatsapp_cooldown_minutes":"30",
+    "auto_remediation_enabled":"false","auto_remediation_cooldown_minutes":"60",
     "maintenance_mode":"false","retention_days":"365","session_hours":"8","update_channel":"stable","auto_update_check":"true","notify_update_available":"true","setup_complete":"false",
 }
-SECRET_KEYS={"unifi_api_key","discord_webhook","uptime_kuma_api_key","sonarr_api_key","radarr_api_key","prowlarr_api_key","sabnzbd_api_key","tautulli_api_key","plex_token","nexroll_api_key","docker_agent_newtiny_token","docker_agent_beast_token","plexmania_agent_token"}; INSTALL_KEY_PATH=Path("/data/install.key")
+SECRET_KEYS={"unifi_api_key","discord_webhook","uptime_kuma_api_key","sonarr_api_key","radarr_api_key","prowlarr_api_key","sabnzbd_api_key","tautulli_api_key","plex_token","nexroll_api_key","docker_agent_newtiny_token","docker_agent_beast_token","plexmania_agent_token","whatsapp_api_key"}; INSTALL_KEY_PATH=Path("/data/install.key")
 _defaults_ready=False
 _defaults_lock=threading.Lock()
 

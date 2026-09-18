@@ -10,11 +10,12 @@ const textFields = [
   'expected_download','expected_upload','warning_threshold','major_threshold','critical_threshold','ping_target','speedtest_minutes',
   'unifi_url','unifi_verify_ssl','ups_type','ups_host','ups_port','ups_name','nutpi_status_path',
   'wifi_warning_threshold','wifi_major_threshold','wifi_critical_threshold','wifi_persist_minutes','wifi_recovery_threshold','wifi_recovery_minutes',
-  'notification_min_severity','notification_cooldown_minutes','retention_days','session_hours','update_channel'
+  'notification_min_severity','notification_cooldown_minutes','retention_days','session_hours','update_channel',
+  'whatsapp_base_url','whatsapp_session_id','whatsapp_chat_id','whatsapp_min_severity','whatsapp_cooldown_minutes','auto_remediation_cooldown_minutes'
 ];
 const checkboxFields = [
   'isp_enabled','speedtest_auto_enabled','unifi_enabled','ups_enabled','discord_enabled','notify_internet','notify_wifi','notify_power','notify_gateway','notify_system',
-  'maintenance_mode','auto_update_check','notify_update_available'
+  'maintenance_mode','auto_update_check','notify_update_available','whatsapp_enabled','auto_remediation_enabled'
 ];
 
 function activatePanel(panelId){
@@ -40,6 +41,7 @@ function collectPayload(includeSecrets=true){
   if(includeSecrets){
     const key=$('unifi_api_key')?.value.trim(); if(key)payload.unifi_api_key=key;
     const hook=$('discord_webhook')?.value.trim(); if(hook)payload.discord_webhook=hook;
+    const wa=$('whatsapp_api_key')?.value.trim(); if(wa)payload.whatsapp_api_key=wa;
   }
   return payload;
 }
@@ -60,8 +62,10 @@ async function loadSettings(){
     checkboxFields.forEach(id=>{const el=$(id);if(el&&data[id]!==undefined)el.checked=boolValue(data[id]);});
     setText('unifi_key_status',data.unifi_api_key_configured?'API key configured ✓':'No API key stored');
     setText('discord_status',data.discord_webhook_configured?'Webhook configured ✓':'No webhook stored');
+    setText('whatsapp_status',data.whatsapp_api_key_configured?'API key configured ✓':'No API key stored');
     setText('security_unifi',data.unifi_api_key_configured?'Encrypted / configured ✓':'Not configured');
     setText('security_discord',data.discord_webhook_configured?'Encrypted / configured ✓':'Not configured');
+    setText('security_whatsapp',data.whatsapp_api_key_configured?'Encrypted / configured ✓':'Not configured');
     setText('settings_health',boolValue(data.setup_complete)?'CONFIGURED':'SETUP REQUIRED');
     setClass('settings_health',`status-pill ${boolValue(data.setup_complete)?'good':'warn'}`);
     applyAppearance();
@@ -74,12 +78,13 @@ async function saveSettings(){
   const status=$('save_status'); if(status)status.textContent='Saving…';
   try{
     const result=await api('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(collectPayload(true))});
-    if($('unifi_api_key'))$('unifi_api_key').value=''; if($('discord_webhook'))$('discord_webhook').value='';
+    if($('unifi_api_key'))$('unifi_api_key').value=''; if($('discord_webhook'))$('discord_webhook').value=''; if($('whatsapp_api_key'))$('whatsapp_api_key').value='';
     applyAppearance(); if(status)status.textContent='Saved ✓';
     const saved=result.settings||{};
     setText('settings_health','CONFIGURED');setClass('settings_health','status-pill good');
     setText('unifi_key_status',saved.unifi_api_key_configured?'API key configured ✓':'No API key stored');
     setText('discord_status',saved.discord_webhook_configured?'Webhook configured ✓':'No webhook stored');
+    setText('whatsapp_status',saved.whatsapp_api_key_configured?'API key configured ✓':'No API key stored');
     setTimeout(()=>{if(status&&status.textContent==='Saved ✓')status.textContent='All changes saved';},1800);
   }catch(error){if(status)status.textContent=`Save failed: ${error.message||error}`;}
 }
@@ -98,6 +103,7 @@ $('test_ping')?.addEventListener('click',()=>runTest('ping','ping_test_status'))
 $('test_unifi')?.addEventListener('click',()=>runTest('unifi','unifi_test_status'));
 $('test_ups')?.addEventListener('click',()=>runTest('ups','ups_test_status'));
 $('test_discord')?.addEventListener('click',()=>runTest('discord','discord_test_status'));
+$('test_whatsapp')?.addEventListener('click',()=>runTest('whatsapp','whatsapp_test_status'));
 
 async function runSpeedTest(){
   let status=$('speedtest_test_status');

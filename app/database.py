@@ -98,6 +98,8 @@ def initialise() -> None:
         CREATE TABLE IF NOT EXISTS admin_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL, FOREIGN KEY(user_id) REFERENCES admin_users(id) ON DELETE CASCADE);
         CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);
+        CREATE TABLE IF NOT EXISTS remediation_actions (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, incident_key TEXT NOT NULL, category TEXT, device TEXT, action TEXT NOT NULL, result_ok INTEGER NOT NULL DEFAULT 0, message TEXT NOT NULL DEFAULT '');
+        CREATE INDEX IF NOT EXISTS idx_remediation_actions_ts ON remediation_actions(ts);
         """)
         for table, column, definition in [
             ("ups_history", "runtime_seconds", "REAL"),
