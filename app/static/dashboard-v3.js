@@ -1,6 +1,8 @@
 (()=>{
 const $=id=>document.getElementById(id);
 const f=(v,s='',d=1)=>Number.isFinite(Number(v))?`${Number(v).toFixed(d)}${s}`:'—';
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const chips=pairs=>pairs.map(([label,value])=>`<span class="overview-chip"><span class="overview-chip-label">${esc(label)}</span><span class="overview-chip-value">${esc(value)}</span></span>`).join('');
 const CARDS=['internet','speed','gateway','wifi','ups'];
 
 function setCard(name,state,text,detail){
@@ -54,7 +56,13 @@ async function load(){
   $('ov_incidents').textContent=d.active_incidents||0;
   $('ov_incidents').className=d.active_incidents?'state-warn':'state-good';
   $('overview_state').textContent=d.active_incidents?'ATTENTION':'HEALTHY';
-  $('overview_detail').textContent=`Internet ${p.online?'online':'offline'} · Latest speed ${s&&s.download?Math.round(s.download)+'/'+Math.round(s.upload||0)+' Mbps':'—'} · Gateway CPU ${g?f(g.cpu,'%'):'—'} · Wi-Fi worst retries ${worst.toFixed(1)}% · UPS ${u&&u.status||'—'}`;
+  $('overview_detail').innerHTML=chips([
+    ['Internet',p.online?'Online':'Offline'],
+    ['Latest speed',s&&s.download?`${Math.round(s.download)}/${Math.round(s.upload||0)} Mbps`:'—'],
+    ['Gateway CPU',g?f(g.cpu,'%'):'—'],
+    ['Wi-Fi worst retries',`${worst.toFixed(1)}%`],
+    ['UPS',u&&u.status||'—'],
+  ]);
 }
 load();setInterval(load,30000);
 })();

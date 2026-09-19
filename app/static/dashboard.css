@@ -72,12 +72,12 @@ p { color: var(--muted); line-height: 1.55; font-size: .78rem; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 20px; box-shadow: none; }
 .dashboard-card { margin-bottom: 20px; }
 .dashboard-card:last-child { margin-bottom: 0; }
-.metric-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 8px; margin-bottom: 16px; }
+.metric-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; margin-bottom: 18px; }
 .dashboard-metrics { grid-template-columns: repeat(6,minmax(0,1fr)); }
-.metric { padding: 12px 13px; min-height: 74px; }
-.metric span { display: block; color: var(--muted); font-size: .66rem; margin-bottom: 5px; }
-.metric strong { display: block; font-size: .96rem; }
-.metric small { display: block; color: var(--muted); margin-top: 4px; font-size: .64rem; overflow-wrap: anywhere; }
+.metric { padding: 14px 16px; min-height: 80px; }
+.metric span { display: block; color: var(--muted); font-size: .7rem; margin-bottom: 6px; }
+.metric strong { display: block; font-size: 1.05rem; }
+.metric small { display: block; color: var(--muted); margin-top: 5px; font-size: .68rem; overflow-wrap: anywhere; }
 
 .status-pill { border: 1px solid var(--border); border-radius: 999px; padding: 6px 10px; font-size: .64rem; font-weight: 800; letter-spacing: .02em; background: var(--accent-soft); border-color: var(--accent-border); }
 .status-pill.good { background: rgba(74,222,128,.12); color: var(--status-good); border-color: rgba(74,222,128,.3); }
@@ -94,7 +94,7 @@ p { color: var(--muted); line-height: 1.55; font-size: .78rem; }
 .overview-action { display: block; text-decoration: none; color: inherit; padding: 20px; min-height: 150px; transition: transform .15s ease, border-color .15s ease; }
 .overview-action h2 { margin: 0 0 8px; }
 .overview-action p { margin: 0 0 18px; }
-.overview-widget .media-card-list { max-height: 160px; margin: 0; }
+.overview-widget .media-card-list { max-height: 190px; margin: 0; }
 .dashboard-link:hover { transform: translateY(-1px); border-color: var(--accent); }
 .info-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; align-items: start; }
 .system-grid, .security-grid { grid-template-columns: repeat(3,minmax(0,1fr)); }
@@ -118,8 +118,8 @@ p { color: var(--muted); line-height: 1.55; font-size: .78rem; }
 .media-section-label:first-of-type { margin-top: 0; }
 .media-card { display: flex; flex-direction: column; }
 .media-card p { margin: 0 0 6px; }
-.media-card-list { display: grid; gap: 6px; max-height: 190px; overflow-y: auto; margin: 6px 0; padding-right: 2px; }
-.media-card-list .setting-row { padding: 8px 10px; }
+.media-card-list { display: grid; gap: 8px; max-height: 210px; overflow-y: auto; margin: 8px 0; padding-right: 2px; }
+.media-card-list .setting-row { padding: 11px 13px; }
 .media-card-footer { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 6px; }
 .media-card-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .media-row-actions { display: flex; gap: 4px; flex-shrink: 0; }
@@ -175,6 +175,10 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent);
 .setting-row span { display: grid; gap: 4px; color: var(--text); }
 .setting-row small { color: var(--muted); }
 .info-banner, .warning-banner { margin-top: 16px; border-radius: 10px; padding: 12px 14px; font-size: .82rem; }
+.info-banner:has(.overview-chip) { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.overview-chip { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.overview-chip-label { color: var(--muted); font-size: .72rem; }
+.overview-chip-value { color: var(--text); font-weight: 700; font-size: .82rem; }
 .info-banner { background: rgba(59,130,246,.08); border: 1px solid rgba(59,130,246,.2); color: #b7d5ff; }
 :root[data-theme="light"] .info-banner { color: #1d4ed8; }
 .warning-banner { background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.24); color: #f8ce73; }
