@@ -11,7 +11,6 @@ import requests
 # before even making the network call); the agent's own copy on the Windows
 # host is the real enforcement boundary.
 DENYLIST_PATTERNS = [
-    r"Remove-Item\s+.*-Recurse.*(\s|^)[A-Za-z]:\\?\s*(-|$)",
     r"Format-Volume",
     r"Clear-Disk",
     r"\bdiskpart\b",
@@ -30,8 +29,20 @@ DENYLIST_PATTERNS = [
 ]
 _DENYLIST = [re.compile(p, re.IGNORECASE) for p in DENYLIST_PATTERNS]
 
+# A single "flags-then-path" regex only catches one exact spelling and misses
+# equally-valid equivalents (PowerShell parameters can come before or after
+# the path). Check root-targeting and -Recurse independently instead.
+_ROOT_TARGET_REMOVE_ITEM = re.compile(r"Remove-Item\b[^\n;]*?(?:^|\s)[A-Za-z]:\\?(?:\s|;|$)", re.IGNORECASE)
+_RECURSE_FLAG = re.compile(r"-Recurse\b", re.IGNORECASE)
+
+
+def _is_recursive_remove_root(command: str) -> bool:
+    return bool(_ROOT_TARGET_REMOVE_ITEM.search(command)) and bool(_RECURSE_FLAG.search(command))
+
 
 def blocked_reason(command: str) -> str | None:
+    if _is_recursive_remove_root(command):
+        return "Command blocked by safety denylist (Remove-Item -Recurse targeting a drive root, regardless of parameter order)"
     for pattern in _DENYLIST:
         if pattern.search(command):
             return f"Command blocked by safety denylist (matched pattern: {pattern.pattern})"

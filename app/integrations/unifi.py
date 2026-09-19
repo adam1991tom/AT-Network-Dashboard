@@ -26,6 +26,9 @@ class UniFiClient:
     def _post(self, path: str, payload: dict[str, Any]) -> requests.Response:
         return requests.post(self.base_url + path, headers=self.headers, json=payload, timeout=20, verify=self.verify_ssl)
 
+    def _put(self, path: str, payload: dict[str, Any]) -> requests.Response:
+        return requests.put(self.base_url + path, headers=self.headers, json=payload, timeout=20, verify=self.verify_ssl)
+
     def test_connection(self) -> dict:
         for path in ("/proxy/network/api/s/default/stat/device", "/proxy/network/integration/v1/info", "/integration/v1/info", "/proxy/network/integration/v1/sites"):
             try:
@@ -123,6 +126,64 @@ class UniFiClient:
             except requests.RequestException as exc:
                 errors.append(f"{path}: {exc}")
         return {"ok": False, "message": f"Unable to restart gateway {mac}", "details": errors[-3:]}
+
+    # Only channels that never require a DFS Channel Availability Check (which
+    # takes the radio offline for up to 10 minutes, and can move it again
+    # immediately if it detects radar) and are legal in effectively every
+    # regulatory domain (US/EU/UK included) - the point of a "make it better"
+    # channel change is not to risk a worse outage than the problem it's
+    # fixing. Width is deliberately never touched here - only the channel.
+    SAFE_CHANNELS_24GHZ = (1, 6, 11)
+    SAFE_CHANNELS_5GHZ = (36, 40, 44, 48)
+
+    def set_ap_channel(self, device_id: str, band: str, channel: int) -> dict[str, Any]:
+        """Change one AP radio's channel and nothing else on that radio.
+        device_id is the UniFi "external_id" (what this app stores as
+        device_id everywhere else, e.g. in incident keys) - not the internal
+        Mongo "_id" the REST write actually needs, which this looks up first.
+        """
+        radio_key = "ng" if "2.4" in band else "na" if "5" in band else None
+        if radio_key is None:
+            return {"ok": False, "message": f"Unrecognised band '{band}' (expected '2.4 GHz' or '5 GHz')"}
+        safe = self.SAFE_CHANNELS_24GHZ if radio_key == "ng" else self.SAFE_CHANNELS_5GHZ
+        if channel not in safe:
+            return {"ok": False, "message": f"Channel {channel} is not on the allowed safe list for {band}: {safe}"}
+
+        device_id = (device_id or "").strip()
+        if not device_id:
+            return {"ok": False, "message": "No device id supplied"}
+        try:
+            devices = self.devices()
+        except Exception as exc:
+            return {"ok": False, "message": f"Could not fetch device list: {exc}"}
+        device = next((d for d in devices if device_id in (d.get("external_id"), d.get("device_id"), d.get("mac"))), None)
+        if device is None:
+            return {"ok": False, "message": f"Could not find an AP with device id {device_id}"}
+
+        internal_id = device.get("_id")
+        radio_table = device.get("radio_table")
+        if not internal_id or not isinstance(radio_table, list):
+            return {"ok": False, "message": "AP record is missing _id or radio_table"}
+        radio = next((r for r in radio_table if r.get("radio") == radio_key), None)
+        if radio is None:
+            return {"ok": False, "message": f"This AP has no {band} radio"}
+
+        previous_channel = radio.get("channel")
+        if previous_channel == channel:
+            return {"ok": True, "message": f"Already on channel {channel}", "previous_channel": previous_channel, "new_channel": channel}
+
+        updated_table = [dict(r) for r in radio_table]
+        for r in updated_table:
+            if r.get("radio") == radio_key:
+                r["channel"] = channel
+        try:
+            response = self._put(f"/proxy/network/api/s/default/rest/device/{internal_id}", {"radio_table": updated_table})
+        except requests.RequestException as exc:
+            return {"ok": False, "message": str(exc)}
+        if not response.ok:
+            return {"ok": False, "message": f"HTTP {response.status_code} setting channel", "details": response.text[:300]}
+        name = device.get("name") or device_id
+        return {"ok": True, "message": f"Changed {name} {band} channel {previous_channel} -> {channel}", "previous_channel": previous_channel, "new_channel": channel}
 
     @staticmethod
     def _extract_rows(body: Any) -> list[dict[str, Any]]:

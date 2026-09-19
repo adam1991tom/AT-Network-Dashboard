@@ -22,7 +22,7 @@ from app.settings_store import all_settings, get_secret
 # smaller than remediation.py's allow-list — restart_ap needs a device_id the
 # chat has no reliable way to name from a Wi-Fi AP's display name alone, so
 # it's left to the automatic pipeline for now.
-_CHAT_ACTIONS = {"restart_container", "restart_plexmania_process", "restart_gateway", "run_command", "run_windows_command", "none"}
+_CHAT_ACTIONS = {"restart_container", "restart_plexmania_process", "restart_gateway", "run_command", "run_windows_command", "change_wifi_channel", "none"}
 
 
 def _bool(value: Any, default: bool = False) -> bool:
@@ -117,10 +117,16 @@ def _gather_state() -> dict[str, Any]:
     lines.append(f"Gateway: wan_up={gateway.get('wan_up')} cpu={gateway.get('cpu')} memory={gateway.get('memory')} uptime_s={gateway.get('uptime')}")
     lines.append(f"UPS: status={ups.get('status')} load_pct={ups.get('load_pct')} connected={ups.get('connected')}")
 
+    wifi_aps = [
+        {"device_id": str(r.get("device_id") or ""), "ap_name": str(r.get("ap_name") or ""), "band": str(r.get("band") or ""), "channel": r.get("channel"), "retries": r.get("retries")}
+        for r in (snapshot.get("wifi") or [])
+    ]
+
     return {
         "text": "\n".join(lines),
         "containers": all_containers,
         "plexmania_processes": [str(p.get("name")) for p in plexmania_processes],
+        "wifi_aps": wifi_aps,
     }
 
 
@@ -134,20 +140,31 @@ def _decide_prompt(message: str, state: dict[str, Any]) -> str:
         by_host.setdefault(host, []).append(name)
     containers_block = "\n".join(f'  host "{h}": ' + ", ".join(names) for h, names in by_host.items()) or "  (none)"
     plexmania = ", ".join(state["plexmania_processes"]) or "(none)"
+    wifi_block = "\n".join(
+        f'  "{ap["ap_name"]}" {ap["band"]}: currently channel {ap["channel"]}, retries {ap["retries"]}%'
+        for ap in state.get("wifi_aps", [])
+    ) or "  (none)"
     return (
         "You are the autonomous administrator for a home network/server monitoring dashboard, chatting directly "
         "with the owner (this is chat, not an automatic incident). Decide whether their message is asking you to "
         "take an action right now, or is just a question / wants information.\n\n"
         f"Current state:\n{state['text']}\n\n"
         f"Known Docker containers, grouped by host:\n{containers_block}\n"
-        f"Known plexmania (10.0.0.6) processes (pick target from exactly these): {plexmania}\n\n"
+        f"Known plexmania (10.0.0.6) processes (pick target from exactly these): {plexmania}\n"
+        f"Known Wi-Fi APs (pick target from exactly these names):\n{wifi_block}\n\n"
         f"User message: {message}\n\n"
         "Respond with strict JSON only:\n"
         '{"intent": "<action or question>", '
-        '"action": "<one of: restart_container, restart_plexmania_process, restart_gateway, run_command, run_windows_command, none>", '
+        '"action": "<one of: restart_container, restart_plexmania_process, restart_gateway, run_command, run_windows_command, change_wifi_channel, none>", '
         '"host": "<the host name (e.g. newtiny) - ONLY for restart_container, else empty>", '
         '"target": "<for restart_container: ONLY the container name, e.g. \\"uptime-kuma\\", never host/name combined. '
-        'for restart_plexmania_process: the exact process name. Empty for other actions>", '
+        'for restart_plexmania_process: the exact process name. for change_wifi_channel: the exact AP name from the '
+        "list above. Empty for other actions>\", "
+        '"band": "<"2.4 GHz" or "5 GHz" - ONLY for change_wifi_channel, else empty>", '
+        '"channel": <integer channel number - ONLY for change_wifi_channel (must be 1, 6, or 11 for 2.4 GHz, or 36, '
+        '40, 44, or 48 for 5 GHz - these are the only channels that never need DFS radar detection and are legal '
+        "almost everywhere; if the owner asks for a different channel, pick the closest one from this list and say "
+        'so in "answer" instead), else 0>, '
         '"command": "<exact command - shell command for run_command (runs on newtiny), PowerShell command for '
         'run_windows_command (runs on the plexmania Windows host), else empty>", '
         '"reasoning": "<one sentence on why this action is or is not warranted>", '
@@ -176,7 +193,7 @@ def _normalize_host_target(host: str, target: str) -> tuple[str, str]:
     return host, target
 
 
-def _execute_chat_action(action: str, host: str, target: str, command: str, cfg: dict[str, Any]) -> dict[str, Any]:
+def _execute_chat_action(action: str, host: str, target: str, command: str, cfg: dict[str, Any], band: str = "", channel: int = 0) -> dict[str, Any]:
     if action == "restart_container":
         host, target = _normalize_host_target(host, target)
         if host not in _DOCKER_HOSTS or not target:
@@ -258,6 +275,20 @@ def _execute_chat_action(action: str, host: str, target: str, command: str, cfg:
             pieces.append(f"stderr: {stderr[:800]}")
         return {"ok": bool(result.get("ok")), "message": " | ".join(pieces)}
 
+    if action == "change_wifi_channel":
+        if not target or not band or not channel:
+            return {"ok": False, "message": "Missing AP name, band, or channel"}
+        api_key = get_secret("unifi_api_key") or ""
+        url = str(cfg.get("unifi_url", "")).strip()
+        if not remediation._bool(cfg.get("unifi_enabled")) or not api_key or not url:
+            return {"ok": False, "message": "UniFi integration is not configured"}
+        wifi_aps = (live_snapshot().get("wifi") or [])
+        match = next((r for r in wifi_aps if str(r.get("ap_name", "")).strip().lower() == target.strip().lower() and str(r.get("band", "")) == band), None)
+        if not match or not match.get("device_id"):
+            return {"ok": False, "message": f"Could not find AP '{target}' on {band}"}
+        client = UniFiClient(url, api_key, remediation._bool(cfg.get("unifi_verify_ssl")))
+        return client.set_ap_channel(str(match["device_id"]), band, int(channel))
+
     return {"ok": False, "message": f"Unknown action '{action}'"}
 
 
@@ -285,10 +316,15 @@ def chat(message: str) -> dict[str, Any]:
             host = str((data or {}).get("host") or "").strip()
             target = str((data or {}).get("target") or "").strip()
             command = str((data or {}).get("command") or "").strip()
+            band = str((data or {}).get("band") or "").strip()
+            try:
+                channel = int((data or {}).get("channel") or 0)
+            except (TypeError, ValueError):
+                channel = 0
             reasoning = str((data or {}).get("reasoning") or "").strip()
             if action == "restart_container":
                 host, target = _normalize_host_target(host, target)
-            exec_result = _execute_chat_action(action, host, target, command, cfg)
+            exec_result = _execute_chat_action(action, host, target, command, cfg, band=band, channel=channel)
             outcome = "succeeded" if exec_result.get("ok") else "failed"
             device = target or host or "-"
             remediation._log(

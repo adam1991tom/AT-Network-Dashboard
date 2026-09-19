@@ -22,9 +22,6 @@ app = FastAPI(title="AT Shell Agent")
 # output and exit code, returned to and stored by the caller) is the safety
 # net for that, not a second layer of guessing what's "safe enough".
 _DENYLIST_PATTERNS = [
-    r"\brm\s+-[a-z]*r[a-z]*f[a-z]*\s+/(?:\s|$)",   # rm -rf / (any flag order)
-    r"\brm\s+-[a-z]*f[a-z]*r[a-z]*\s+/(?:\s|$)",
-    r"\brm\s+-rf\s+/\*",
     r"\bmkfs(\.\w+)?\b",
     r"\bdd\s+[^\n]*of=/dev/",
     r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:",   # classic fork bomb
@@ -36,18 +33,43 @@ _DENYLIST_PATTERNS = [
     r"\bhalt\b",
     r"\bpoweroff\b",
     r"\binit\s+0\b",
-    r"\bchmod\s+-R\s+0{2,4}\s+/(?:\s|$)",
-    r"\bchown\s+-R\b[^\n]*\s+/(?:\s|$)",
     r"\b(userdel|deluser)\b[^\n]*\broot\b",
     r"\bpasswd\s+root\b",
     r"[>]\s*/etc/passwd\b",
     r"[>]\s*/etc/shadow\b",
-    r"\biptables\s+-F\b",
+    r"\biptables\s+(-F|--flush)\b",
     r"\bufw\s+disable\b",
     r"\bcurl\b[^\n]*\|\s*(bash|sh)\b",   # piping a remote download straight into a shell
     r"\bwget\b[^\n]*\|\s*(bash|sh)\b",
 ]
 _DENYLIST = [re.compile(p, re.IGNORECASE) for p in _DENYLIST_PATTERNS]
+
+# rm/chmod/chown targeting the filesystem root need their own check rather
+# than a single regex: a flags-then-path regex only catches one exact spelling
+# (e.g. "-rf") and silently misses every equally-valid equivalent - separate
+# short flags in either order ("-r -f"), long flags ("--recursive --force"),
+# or a mix. This checks for a root-targeting invocation and a recursive *and*
+# force-like flag appearing anywhere in it, independent of order or spelling.
+_ROOT_TARGET_RM = re.compile(r"\brm\s+([^;&|\n]*?)(?:^|\s)/\*?(?:\s|;|&&|\|\||$)", re.IGNORECASE)
+_ROOT_TARGET_CHOWN_CHMOD = re.compile(r"\b(chmod|chown)\s+([^;&|\n]*?)(?:^|\s)/(?:\s|;|&&|\|\||$)", re.IGNORECASE)
+_RECURSIVE_FLAG = re.compile(r"(--recursive\b|-[a-zA-Z]*[rR][a-zA-Z]*\b)")
+_FORCE_FLAG = re.compile(r"(--force\b|-[a-zA-Z]*f[a-zA-Z]*\b)")
+
+
+def _is_rm_root(command: str) -> bool:
+    for m in _ROOT_TARGET_RM.finditer(command):
+        flags = m.group(1)
+        if _RECURSIVE_FLAG.search(flags) and _FORCE_FLAG.search(flags):
+            return True
+    return False
+
+
+def _is_recursive_chmod_chown_root(command: str) -> bool:
+    for m in _ROOT_TARGET_CHOWN_CHMOD.finditer(command):
+        flags = m.group(2)
+        if _RECURSIVE_FLAG.search(flags):
+            return True
+    return False
 
 
 class ExecRequest(BaseModel):
@@ -63,6 +85,10 @@ def verify_token(x_agent_token: str | None = Header(default=None)) -> None:
 
 
 def blocked_reason(command: str) -> str | None:
+    if _is_rm_root(command):
+        return "Command blocked by safety denylist (rm --recursive --force targeting filesystem root, in any flag spelling/order)"
+    if _is_recursive_chmod_chown_root(command):
+        return "Command blocked by safety denylist (recursive chmod/chown targeting filesystem root)"
     for pattern in _DENYLIST:
         if pattern.search(command):
             return f"Command blocked by safety denylist (matched pattern: {pattern.pattern})"

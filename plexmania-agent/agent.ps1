@@ -19,6 +19,27 @@ $Port = 8299
 $TokenPath = Join-Path $PSScriptRoot 'token.txt'
 $AgentToken = (Get-Content $TokenPath -Raw).Trim()
 
+function Test-TokenMatch {
+    # Plain string -eq/-ne on the raw token would leak how many leading bytes
+    # matched via response timing (a classic side-channel on network-exposed
+    # auth checks - the Linux agents avoid this with hmac.compare_digest).
+    # Hashing both sides first normalises to a fixed 32-byte length so there's
+    # nothing to leak from length either, then the compare loop always visits
+    # every byte regardless of where the first mismatch is.
+    param([string]$Provided, [string]$Expected)
+    if ([string]::IsNullOrEmpty($Provided)) { return $false }
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $providedHash = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Provided))
+        $expectedHash = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Expected))
+    } finally {
+        $sha.Dispose()
+    }
+    $diff = 0
+    for ($i = 0; $i -lt $providedHash.Length; $i++) { $diff = $diff -bor ($providedHash[$i] -bxor $expectedHash[$i]) }
+    return $diff -eq 0
+}
+
 $Apps = @{
     plex = @{
         ProcessNames = @('Plex Media Server')
@@ -83,7 +104,6 @@ function Restart-App {
 # case and a catastrophic, usually irreversible blast radius. Everything else
 # is allowed to run - the caller logs every command/output as the safety net.
 $DenylistPatterns = @(
-    'Remove-Item\s+.*-Recurse.*(\s|^)[A-Za-z]:\\?\s*(-|$)',
     'Format-Volume',
     'Clear-Disk',
     '\bdiskpart\b',
@@ -101,8 +121,18 @@ $DenylistPatterns = @(
     'vssadmin\s+delete\s+shadows'
 )
 
+# A single "flags-then-path" regex only catches one exact spelling and misses
+# equally-valid equivalents, since PowerShell parameters can come before or
+# after the path (e.g. "Remove-Item C:\ -Recurse" vs "-Recurse C:\"). Check
+# root-targeting and -Recurse independently so order doesn't matter.
+$RootTargetRemoveItem = 'Remove-Item\b[^\n;]*?(?:^|\s)[A-Za-z]:\\?(?:\s|;|$)'
+$RecurseFlag = '-Recurse\b'
+
 function Test-CommandBlocked {
     param([string]$Command)
+    if (($Command -imatch $RootTargetRemoveItem) -and ($Command -imatch $RecurseFlag)) {
+        return "Command blocked by safety denylist (Remove-Item -Recurse targeting a drive root, regardless of parameter order)"
+    }
     foreach ($pattern in $DenylistPatterns) {
         if ($Command -imatch $pattern) {
             return "Command blocked by safety denylist (matched pattern: $pattern)"
@@ -162,7 +192,7 @@ while ($listener.IsListening) {
     $context = $listener.GetContext()
     try {
         $token = $context.Request.Headers['X-Agent-Token']
-        if (-not $token -or $token -ne $AgentToken) {
+        if (-not (Test-TokenMatch -Provided $token -Expected $AgentToken)) {
             Write-JsonResponse $context 401 @{ detail = 'Invalid or missing agent token' }
             continue
         }
