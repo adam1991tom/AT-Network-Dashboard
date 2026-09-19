@@ -23,7 +23,16 @@ class GeminiClient:
         if not self.api_key:
             return {"ok": False, "message": "Gemini API key not configured"}
         url = f"{API_BASE}/{self.model}:generateContent"
-        generation_config: dict[str, Any] = {"maxOutputTokens": max_tokens}
+        generation_config: dict[str, Any] = {
+            "maxOutputTokens": max_tokens,
+            # Gemini 3.x models spend tokens on hidden "thinking" before the
+            # visible answer by default - confirmed live that this was eating
+            # most of maxOutputTokens and cutting the actual text off
+            # mid-sentence well under the configured limit. None of our calls
+            # need multi-step reasoning shown or hidden, just a direct answer,
+            # so disable it and get the full budget back for real output.
+            "thinkingConfig": {"thinkingBudget": 0},
+        }
         if json_mode:
             generation_config["responseMimeType"] = "application/json"
         payload = {
@@ -56,8 +65,16 @@ class GeminiClient:
             text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
         except (KeyError, IndexError, TypeError, ValueError):
             return {"ok": False, "message": "Gemini returned no usable content (likely blocked by safety filters)"}
-        if not text and candidate.get("finishReason") == "MAX_TOKENS":
-            return {"ok": False, "message": "Gemini's response was cut off before producing any output (hit maxOutputTokens) — try a shorter prompt or increase max_tokens"}
+        if candidate.get("finishReason") == "MAX_TOKENS":
+            if not text:
+                return {"ok": False, "message": "Gemini's response was cut off before producing any output (hit maxOutputTokens) — try a shorter prompt or increase max_tokens"}
+            # Some text came through before the cutoff (e.g. a summary that
+            # stops mid-sentence) - this is genuinely different from a clean
+            # finish, so surface it as an explicit warning rather than
+            # silently handing back prose that just stops. Caught here, not
+            # just the empty case above, because a partial answer is exactly
+            # as likely as no answer once thinking eats the budget.
+            return {"ok": True, "text": text, "truncated": True}
         return {"ok": True, "text": text}
 
     def _generate(self, prompt: str) -> dict[str, Any]:
@@ -88,7 +105,10 @@ class GeminiClient:
         result = self._generate_text(prompt, max_tokens=max_tokens, json_mode=False)
         if not result.get("ok"):
             return result
-        return {"ok": True, "text": result["text"].strip()}
+        text = result["text"].strip()
+        if result.get("truncated"):
+            text += "\n\n_(cut off — hit the response length limit)_"
+        return {"ok": True, "text": text, "truncated": result.get("truncated", False)}
 
     def test_connection(self) -> dict[str, Any]:
         result = self._generate('Reply with strict JSON only: {"ok": true, "note": "connection test"}')

@@ -134,7 +134,24 @@ def _current_state_summary() -> str:
     return _gather_state()["text"]
 
 
-def _decide_prompt(message: str, state: dict[str, Any]) -> str:
+def _recent_conversation(limit: int = 6) -> str:
+    """Last few turns, rendered as plain text, so a short follow-up like "yes"
+    or "do it" can be understood against what was just proposed - without
+    this, every chat message was decided in total isolation, so any
+    clarifying question the AI itself asked was a dead end (the reply to it
+    carried no memory of what was being confirmed)."""
+    con = connect()
+    try:
+        rows = con.execute("SELECT role,message FROM ai_chat_log ORDER BY id DESC LIMIT ?", (max(0, limit),)).fetchall()
+    finally:
+        con.close()
+    if not rows:
+        return "(none - this is the start of the conversation)"
+    lines = [f"{'User' if r['role'] == 'user' else 'AI'}: {r['message']}" for r in reversed(rows)]
+    return "\n".join(lines)
+
+
+def _decide_prompt(message: str, state: dict[str, Any], history: str) -> str:
     by_host: dict[str, list[str]] = {}
     for host, name, _status in state["containers"]:
         by_host.setdefault(host, []).append(name)
@@ -147,7 +164,11 @@ def _decide_prompt(message: str, state: dict[str, Any]) -> str:
     return (
         "You are the autonomous administrator for a home network/server monitoring dashboard, chatting directly "
         "with the owner (this is chat, not an automatic incident). Decide whether their message is asking you to "
-        "take an action right now, or is just a question / wants information.\n\n"
+        "take an action right now, or is just a question / wants information. If it's a short follow-up like \"yes\", "
+        "\"do it\", or \"channel 40 then\" that only makes sense in light of the recent conversation below (e.g. "
+        "confirming or completing something you proposed last turn), resolve it using that context - don't treat it "
+        "as a stand-alone message with no target.\n\n"
+        f"Recent conversation:\n{history}\n\n"
         f"Current state:\n{state['text']}\n\n"
         f"Known Docker containers, grouped by host:\n{containers_block}\n"
         f"Known plexmania (10.0.0.6) processes (pick target from exactly these): {plexmania}\n"
@@ -171,7 +192,10 @@ def _decide_prompt(message: str, state: dict[str, Any]) -> str:
         '"answer": "<a complete, helpful natural-language reply to the user\'s message, used only when intent is '
         '"question" (or no valid action was found) - so write a real answer here every time, not a placeholder. '
         "Never write as if you are currently performing, initiating, or have just completed an action here (e.g. "
-        'never say "restarting now") - if intent is "action" this field is ignored, so leave it empty in that case>"'
+        'never say "restarting now"). If you set intent to "question" only because the request was too vague to '
+        "act on (e.g. no specific AP/channel/container named), say so here and ask exactly what's missing - the "
+        f"actions listed above are real dashboard capabilities, not things to deny or redirect to manual router-admin "
+        "instructions for. If intent is \"action\" this field is ignored, so leave it empty in that case>\""
         "}\n\n"
         "Rules: only set intent to \"action\" if the user is clearly asking you to fix/restart/run something now, not "
         "just describing a problem. target and host must be copied exactly from the lists above (as separate fields, "
@@ -302,11 +326,12 @@ def chat(message: str) -> dict[str, Any]:
 
     cfg = all_settings()
     state = _gather_state()
+    history = _recent_conversation()
     can_act = remediation._bool(cfg.get("auto_remediation_enabled")) and remediation._bool(cfg.get("ai_autonomous_enabled")) and not remediation._bool(cfg.get("maintenance_mode"))
 
     reply_text: str
     if can_act:
-        decision = client.diagnose_incident(_decide_prompt(message, state))
+        decision = client.diagnose_incident(_decide_prompt(message, state, history))
         data = decision.get("data") if decision.get("ok") else {}
         action = str((data or {}).get("action") or "none").strip()
         if action not in _CHAT_ACTIONS:
@@ -338,12 +363,12 @@ def chat(message: str) -> dict[str, Any]:
             reply_text = str((data or {}).get("answer") or "").strip()
             if not reply_text:
                 no_action_reason = str((data or {}).get("reasoning") or "").strip() or "no matching action/target was found for this message"
-                answer = client.chat(_qa_prompt(message, state["text"], no_action_reason))
+                answer = client.chat(_qa_prompt(message, state["text"], no_action_reason, history))
                 if not answer.get("ok"):
                     return answer
                 reply_text = answer["text"]
     else:
-        answer = client.chat(_qa_prompt(message, state["text"], "autonomous actions are currently switched off in Settings"))
+        answer = client.chat(_qa_prompt(message, state["text"], "autonomous actions are currently switched off in Settings", history))
         if not answer.get("ok"):
             return answer
         reply_text = answer["text"]
@@ -360,18 +385,36 @@ def chat(message: str) -> dict[str, Any]:
     return {"ok": True, "reply": reply_text}
 
 
-def _qa_prompt(message: str, state_text: str, no_action_taken_reason: str) -> str:
+_CAPABILITIES_TEXT = (
+    "Actions this dashboard CAN actually take when asked with enough specifics (a target and, where needed, "
+    "a value) - do not claim these are unavailable or unintegrated, they are real:\n"
+    "- Restart a specific Docker container (needs the container name)\n"
+    "- Restart the gateway/router (whole-network ~60-90s outage)\n"
+    "- Restart a plexmania app: plex, ersatztv, or nexroll\n"
+    "- Change one Wi-Fi AP's channel (needs the AP name, band, and a channel from the safe list: 1, 6, or 11 for "
+    "2.4 GHz; 36, 40, 44, or 48 for 5 GHz - these are the only ones offered, since they never need DFS radar "
+    "detection and are legal almost everywhere)\n"
+    "- Run a shell command on newtiny, or a PowerShell command on the plexmania Windows host\n"
+)
+
+
+def _qa_prompt(message: str, state_text: str, no_action_taken_reason: str, history: str) -> str:
     return (
         "You are the AI administrator embedded in a home network/server monitoring dashboard called AT Network "
         "Dashboard. Answer the user's message using the current state below plus general troubleshooting knowledge. "
         "Be concise and specific.\n\n"
-        "IMPORTANT: no action is being executed as part of this reply "
+        f"Recent conversation:\n{history}\n\n"
+        f"{_CAPABILITIES_TEXT}\n"
+        "IMPORTANT: no action is being executed as part of THIS reply "
         f"({no_action_taken_reason}). Never write as if you are currently performing, initiating, or have just "
-        "completed an action (e.g. never say \"restarting now\" or \"I've restarted it\") — if the user asked for "
-        "something to be done, explain plainly that it wasn't done and why (e.g. the target couldn't be identified, "
-        "the host is unreachable, or autonomous actions are off), and what they can do instead. Only ever describe "
-        "actions the automatic incident pipeline actually already logged (visible in the state below) as having "
-        "happened.\n\n"
+        "completed an action (e.g. never say \"restarting now\" or \"I've restarted it\"). If the reason is that the "
+        "request was too vague to act on (no specific target/value given), say so and ask exactly what's missing "
+        "(e.g. which AP and which channel) - do not tell the user the capability doesn't exist or point them to "
+        "manual router-admin instructions when it's something this dashboard can actually do itself. Only claim a "
+        "capability is genuinely unavailable when it's not in the list above (e.g. UPS power control, which really "
+        "isn't automatable) or the specific integration is disabled/unconfigured (visible in the state below). Only "
+        "ever describe actions the automatic incident pipeline actually already logged (visible in the state below) "
+        "as having happened.\n\n"
         f"Current system state:\n{state_text}\n\nUser message: {message}\n"
     )
 
