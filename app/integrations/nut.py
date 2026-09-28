@@ -3,6 +3,9 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 import requests
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class NutPiHttpClient:
@@ -28,7 +31,7 @@ class NutPiHttpClient:
         return f"{self.scheme}://{self.netloc}{self.base_path}{self.status_path}"
 
     def status(self) -> dict:
-        response = requests.get(self.url, timeout=10)
+        response = requests.get(self.url, timeout=10, verify=False)
         response.raise_for_status()
         return response.json()
 
