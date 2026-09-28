@@ -15,6 +15,7 @@ from app.settings_store import all_settings, get_secret
 _last_fix: dict[str, float] = {}
 _ai_last_action: dict[str, float] = {}
 _shell_action_times: list[float] = []
+_gemini_diagnose_times: list[float] = []
 
 # Per-category allow-list of actions the AI assistant may recommend/execute.
 # UPS and ISP have no safe automatic action (see _execute_action) so they are
@@ -165,6 +166,23 @@ def _shell_rate_limited(cfg: dict[str, Any]) -> bool:
     return False
 
 
+def _gemini_rate_limited(cfg: dict[str, Any]) -> bool:
+    """Global cap on how many Gemini diagnosis calls incidents can trigger per
+    hour. A single outage (WAN + packet-loss + gateway-CPU opening together)
+    can otherwise burn through the whole free-tier quota for the day in one
+    burst, leaving the AI unavailable (429s) for every incident and chat
+    message afterward. Same bucket style as _shell_rate_limited."""
+    limit = max(1, int(float(cfg.get("ai_gemini_max_diagnoses_per_hour") or 20)))
+    now = time.monotonic()
+    cutoff = now - 3600
+    while _gemini_diagnose_times and _gemini_diagnose_times[0] < cutoff:
+        _gemini_diagnose_times.pop(0)
+    if len(_gemini_diagnose_times) >= limit:
+        return True
+    _gemini_diagnose_times.append(now)
+    return False
+
+
 def _execute_action(action: str, incident_key: str, cfg: dict[str, Any], command: str = "") -> dict[str, Any]:
     if action == "restart_container":
         for host in _DOCKER_HOSTS:
@@ -288,6 +306,12 @@ def handle_incident_opened(incident_key: str, category: str, device: str, severi
 
     api_key = get_secret("gemini_api_key") or ""
     if not _bool(cfg.get("ai_enabled")) or not api_key:
+        maybe_fix(incident_key, category, device)
+        return
+
+    if _gemini_rate_limited(cfg):
+        _log(incident_key, category, device, "ai_diagnose_skipped_ratelimit", True,
+             "Global Gemini diagnosis rate limit reached for this hour — falling back to rule-based auto-fix", source="ai")
         maybe_fix(incident_key, category, device)
         return
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import requests
@@ -44,6 +45,14 @@ class GeminiClient:
         }
         try:
             response = requests.post(url, params={"key": self.api_key}, json=payload, timeout=45)
+            # A 503 ("model overloaded") is Google's own signal that this is
+            # momentary, not a real failure - one short retry clears most of
+            # these instead of surfacing a spurious "AI isn't working".
+            # 429 (quota) is not retried here: that's an actual limit, and
+            # hammering it again immediately only makes recovery slower.
+            if response.status_code == 503:
+                time.sleep(3.0)
+                response = requests.post(url, params={"key": self.api_key}, json=payload, timeout=45)
         except requests.RequestException as exc:
             return {"ok": False, "message": str(exc)}
         if response.status_code == 429:

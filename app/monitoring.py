@@ -111,10 +111,21 @@ def _set_incident(
     transition = "open" if not before_active and after_active else "resolved" if before_active and not after_active else None
     if transition:
         if transition == "open":
-            try:
-                remediation.handle_incident_opened(incident_key, category, device, severity, summary, details)
-            except Exception as exc:
-                print(f"auto-remediation failed: {exc}")
+            # A burst of incidents opening in the same cycle (e.g. a WAN outage
+            # tripping WAN/packet-loss/gateway-CPU together) can transiently
+            # lock the shared SQLite file long enough to exceed connect()'s own
+            # busy_timeout. One short retry clears that without letting a
+            # genuinely broken diagnosis loop retry forever.
+            for attempt in range(2):
+                try:
+                    remediation.handle_incident_opened(incident_key, category, device, severity, summary, details)
+                    break
+                except Exception as exc:
+                    if attempt == 0 and "locked" in str(exc).lower():
+                        time.sleep(2.0)
+                        continue
+                    print(f"auto-remediation failed: {exc}")
+                    break
         notify_incident_transition(cfg, incident_key, transition, severity, category, device, summary, details)
 
 
