@@ -28,10 +28,13 @@ def apply_retention(days:int):
   for t,col in (('speedtest_history','ts'),('ping_history','ts'),('gateway_history','ts'),('wifi_history','ts'),('ups_history','ts'),
                 ('unifi_wan_history','ts'),('unifi_ap_traffic_history','ts'),('ai_chat_log','ts'),('ai_reports','ts'),('maintenance_runs','started_at')):
    if _exists(con,t):
-    cur=con.execute(f'DELETE FROM {t} WHERE datetime({col})<datetime(?)',(cutoff,));deleted+=max(cur.rowcount,0)
+    # julianday(), not datetime(), to actually hit idx_{table}_jd on the big
+    # history tables - datetime(col)<datetime(?) compiles fine but forces a
+    # full table scan every run (see database.py's index list).
+    cur=con.execute(f'DELETE FROM {t} WHERE julianday({col})<julianday(?)',(cutoff,));deleted+=max(cur.rowcount,0)
   con.commit();return {"ok":True,"deleted":deleted,"cutoff":cutoff}
  finally:con.close()
 def backup_bytes():
- memory=io.BytesIO();snap=sqlite3.connect(':memory:');src=sqlite3.connect(DB_PATH);src.backup(snap);src.close();dump='\n'.join(snap.iterdump());snap.close()
+ memory=io.BytesIO();snap=sqlite3.connect(':memory:');src=sqlite3.connect(DB_PATH,timeout=30);src.backup(snap);src.close();dump='\n'.join(snap.iterdump());snap.close()
  with zipfile.ZipFile(memory,'w',zipfile.ZIP_DEFLATED) as z:z.writestr('network-dashboard.sql',dump);z.writestr('README.txt','AT Network Dashboard backup. Contains local settings/history and may contain encrypted integration secrets. Store securely.')
  return memory.getvalue()
